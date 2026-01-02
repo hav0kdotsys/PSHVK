@@ -17,7 +17,7 @@ namespace HvkGui
 
                 const HvkEmissiveBinding* AllocateEmissiveBinding(ImTextureID base, const EmissiveImageOptions* opts)
                 {
-                        if (!opts || opts->emissiveTexture == nullptr || opts->emissiveStrength <= 0.0f)
+                        if (!opts || opts->emissiveTexture == (ImTextureID)nullptr || opts->emissiveStrength <= 0.0f)
                                 return nullptr;
 
                         ImGuiContext* ctx = ImGui::GetCurrentContext();

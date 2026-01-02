@@ -1,0 +1,10 @@
+{
+    "cmake.ignoreCMakeListsMissing": true,
+    "C_Cpp.default.customConfigurationVariables": {
+
+    },
+    "C_Cpp.default.includePath": [
+        "$(default)"
+    ],
+    "C_Cpp.default.compilerPath": "d:\\Program Files\\Microsoft Visual Studio\\18\\Insiders\\VC\\Tools\\MSVC\\14.50.35717\\bin\\Hostx64\\x64\\cl.exe"
+}
