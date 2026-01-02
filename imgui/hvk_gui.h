@@ -2,6 +2,7 @@
 
 #include "imgui.h"
 #include "../example_win32_directx12/settings.h"
+#include "hvk_emissive.h"
 #include <string>
 #include <vector>
 
@@ -78,15 +79,23 @@ namespace HvkGui
 	/// <param name="borderColor">Border color (default transparent)</param>
 	/// <param name="rounding">Corner rounding amount (default 0.0f = no rounding)</param>
 	/// <returns>true if the widget was rendered</returns>
-	bool ImageRounded(
-		ImTextureID textureId,
-		const ImVec2& size,
-		const ImVec2& uv0 = ImVec2(0, 0),
-		const ImVec2& uv1 = ImVec2(1, 1),
-		ImU32 tintColor = IM_COL32_WHITE,
-		ImU32 borderColor = IM_COL32_BLACK_TRANS,
-		float rounding = 0.0f
-	);
+        struct EmissiveImageOptions
+        {
+                ImTextureID emissiveTexture = nullptr;
+                float emissiveStrength = 0.0f;
+                bool additiveBlend = false;
+        };
+
+        bool ImageRounded(
+                ImTextureID textureId,
+                const ImVec2& size,
+                const ImVec2& uv0 = ImVec2(0, 0),
+                const ImVec2& uv1 = ImVec2(1, 1),
+                ImU32 tintColor = IM_COL32_WHITE,
+                ImU32 borderColor = IM_COL32_BLACK_TRANS,
+                float rounding = 0.0f,
+                const EmissiveImageOptions* emissive = nullptr
+        );
 
 	/// <summary>
 	/// Renders a texture with a custom border texture
@@ -101,16 +110,17 @@ namespace HvkGui
 	/// <param name="uv0">UV coordinates for top-left of main texture</param>
 	/// <param name="uv1">UV coordinates for bottom-right of main texture</param>
 	/// <returns>true if the widget was rendered</returns>
-	bool ImageWithCustomBorder(
-		ImTextureID textureId,
-		ImTextureID borderTextureId,
-		const ImVec2& size,
-		float borderSize = 8.0f,
-		ImU32 tintColor = IM_COL32_WHITE,
-		ImU32 borderTintColor = IM_COL32_WHITE,
-		const ImVec2& uv0 = ImVec2(0, 0),
-		const ImVec2& uv1 = ImVec2(1, 1)
-	);
+        bool ImageWithCustomBorder(
+                ImTextureID textureId,
+                ImTextureID borderTextureId,
+                const ImVec2& size,
+                float borderSize = 8.0f,
+                ImU32 tintColor = IM_COL32_WHITE,
+                ImU32 borderTintColor = IM_COL32_WHITE,
+                const ImVec2& uv0 = ImVec2(0, 0),
+                const ImVec2& uv1 = ImVec2(1, 1),
+                const EmissiveImageOptions* emissive = nullptr
+        );
 
 	/// <summary>
 	/// Button with a texture background and rounded corners
