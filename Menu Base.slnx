@@ -1,0 +1,12 @@
+<Solution>
+  <Configurations>
+    <BuildType Name="Debug" />
+    <BuildType Name="Dev" />
+    <BuildType Name="Release" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="Menu Base.vcxproj" Id="9ff61d99-e587-478c-9f71-82e81663dd43">
+    <BuildType Solution="Release|x86" Project="Dev" />
+  </Project>
+</Solution>
