@@ -58,6 +58,7 @@
 #include "imgui.h"
 #ifndef IMGUI_DISABLE
 #include "imgui_impl_dx12.h"
+#include "../hvk_emissive.h"
 
 // DirectX
 #include <d3d12.h>
@@ -140,6 +141,13 @@ struct VERTEX_CONSTANT_BUFFER_DX12
     float   mvp[4][4];
 };
 
+struct PIXEL_CONSTANT_BUFFER_DX12
+{
+    float emissiveStrength;
+    float additiveBlend;
+    float padding[2];
+};
+
 // Functions
 static void ImGui_ImplDX12_SetupRenderState(ImDrawData* draw_data, ID3D12GraphicsCommandList* command_list, ImGui_ImplDX12_RenderBuffers* fr)
 {
@@ -189,6 +197,8 @@ static void ImGui_ImplDX12_SetupRenderState(ImDrawData* draw_data, ID3D12Graphic
     command_list->SetPipelineState(bd->pPipelineState);
     command_list->SetGraphicsRootSignature(bd->pRootSignature);
     command_list->SetGraphicsRoot32BitConstants(0, 16, &vertex_constant_buffer, 0);
+    PIXEL_CONSTANT_BUFFER_DX12 pixel_constants = {};
+    command_list->SetGraphicsRoot32BitConstants(1, 4, &pixel_constants, 0);
 
     // Setup blend factor
     const float blend_factor[4] = { 0.f, 0.f, 0.f, 0.f };
@@ -334,10 +344,28 @@ void ImGui_ImplDX12_RenderDrawData(ImDrawData* draw_data, ID3D12GraphicsCommandL
                 const D3D12_RECT r = { (LONG)clip_min.x, (LONG)clip_min.y, (LONG)clip_max.x, (LONG)clip_max.y };
                 command_list->RSSetScissorRects(1, &r);
 
-                // Bind texture, Draw
-                D3D12_GPU_DESCRIPTOR_HANDLE texture_handle = {};
-                texture_handle.ptr = (UINT64)pcmd->GetTexID();
-                command_list->SetGraphicsRootDescriptorTable(1, texture_handle);
+                PIXEL_CONSTANT_BUFFER_DX12 pixel_constants = {};
+                D3D12_GPU_DESCRIPTOR_HANDLE base_handle = {};
+                D3D12_GPU_DESCRIPTOR_HANDLE emissive_handle = {};
+
+                ImTextureID tex_id = pcmd->GetTexID();
+                if (ImTextureIdHasEmissive(tex_id))
+                {
+                    const HvkEmissiveBinding* binding = (const HvkEmissiveBinding*)tex_id;
+                    base_handle.ptr = (UINT64)binding->BaseTexture;
+                    emissive_handle.ptr = binding->EmissiveTexture ? (UINT64)binding->EmissiveTexture : base_handle.ptr;
+                    pixel_constants.emissiveStrength = binding->EmissiveStrength;
+                    pixel_constants.additiveBlend = binding->Additive ? 1.0f : 0.0f;
+                }
+                else
+                {
+                    base_handle.ptr = (UINT64)tex_id;
+                    emissive_handle = base_handle;
+                }
+
+                command_list->SetGraphicsRoot32BitConstants(1, 4, &pixel_constants, 0);
+                command_list->SetGraphicsRootDescriptorTable(2, base_handle);
+                command_list->SetGraphicsRootDescriptorTable(3, emissive_handle);
                 command_list->DrawIndexedInstanced(pcmd->ElemCount, 1, pcmd->IdxOffset + global_idx_offset, pcmd->VtxOffset + global_vtx_offset, 0);
             }
         }
@@ -567,14 +595,21 @@ bool    ImGui_ImplDX12_CreateDeviceObjects()
 
     // Create the root signature
     {
-        D3D12_DESCRIPTOR_RANGE descRange = {};
-        descRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-        descRange.NumDescriptors = 1;
-        descRange.BaseShaderRegister = 0;
-        descRange.RegisterSpace = 0;
-        descRange.OffsetInDescriptorsFromTableStart = 0;
+        D3D12_DESCRIPTOR_RANGE descRangeBase = {};
+        descRangeBase.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+        descRangeBase.NumDescriptors = 1;
+        descRangeBase.BaseShaderRegister = 0;
+        descRangeBase.RegisterSpace = 0;
+        descRangeBase.OffsetInDescriptorsFromTableStart = 0;
 
-        D3D12_ROOT_PARAMETER param[2] = {};
+        D3D12_DESCRIPTOR_RANGE descRangeEmissive = {};
+        descRangeEmissive.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+        descRangeEmissive.NumDescriptors = 1;
+        descRangeEmissive.BaseShaderRegister = 1;
+        descRangeEmissive.RegisterSpace = 0;
+        descRangeEmissive.OffsetInDescriptorsFromTableStart = 0;
+
+        D3D12_ROOT_PARAMETER param[4] = {};
 
         param[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
         param[0].Constants.ShaderRegister = 0;
@@ -582,10 +617,21 @@ bool    ImGui_ImplDX12_CreateDeviceObjects()
         param[0].Constants.Num32BitValues = 16;
         param[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
 
-        param[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-        param[1].DescriptorTable.NumDescriptorRanges = 1;
-        param[1].DescriptorTable.pDescriptorRanges = &descRange;
+        param[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+        param[1].Constants.ShaderRegister = 0;
+        param[1].Constants.RegisterSpace = 1;
+        param[1].Constants.Num32BitValues = 4;
         param[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+
+        param[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+        param[2].DescriptorTable.NumDescriptorRanges = 1;
+        param[2].DescriptorTable.pDescriptorRanges = &descRangeBase;
+        param[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+
+        param[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+        param[3].DescriptorTable.NumDescriptorRanges = 1;
+        param[3].DescriptorTable.pDescriptorRanges = &descRangeEmissive;
+        param[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
         // Bilinear sampling is required by default. Set 'io.Fonts->Flags |= ImFontAtlasFlags_NoBakedLines' or 'style.AntiAliasedLinesUseTex = false' to allow point/nearest sampling.
         D3D12_STATIC_SAMPLER_DESC staticSampler[1] = {};
@@ -715,7 +761,13 @@ bool    ImGui_ImplDX12_CreateDeviceObjects()
     // Create the pixel shader
     {
         static const char* pixelShader =
-            "struct PS_INPUT\
+            "cbuffer pixelBuffer : register(b1)\
+            {\
+              float emissiveStrength;\
+              float additiveBlend;\
+              float2 padding;\
+            };\
+            struct PS_INPUT\
             {\
               float4 pos : SV_POSITION;\
               float4 col : COLOR0;\
@@ -723,11 +775,15 @@ bool    ImGui_ImplDX12_CreateDeviceObjects()
             };\
             SamplerState sampler0 : register(s0);\
             Texture2D texture0 : register(t0);\
+            Texture2D texture1 : register(t1);\
             \
             float4 main(PS_INPUT input) : SV_Target\
             {\
-              float4 out_col = input.col * texture0.Sample(sampler0, input.uv); \
-              return out_col; \
+              float4 base = input.col * texture0.Sample(sampler0, input.uv);\
+              float3 emissive = texture1.Sample(sampler0, input.uv).rgb * emissiveStrength;\
+              float3 combined = base.rgb + (additiveBlend > 0.5f ? emissive : emissive * base.a);\
+              base.rgb = saturate(combined);\
+              return base;\
             }";
 
         if (FAILED(D3DCompile(pixelShader, strlen(pixelShader), nullptr, nullptr, nullptr, "main", "ps_5_0", 0, 0, &pixelShaderBlob, nullptr)))
