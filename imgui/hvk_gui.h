@@ -81,7 +81,7 @@ namespace HvkGui
 	/// <returns>true if the widget was rendered</returns>
         struct EmissiveImageOptions
         {
-                ImTextureID emissiveTexture = nullptr;
+                ImTextureID emissiveTexture = (ImTextureID)nullptr;
                 float emissiveStrength = 0.0f;
                 bool additiveBlend = false;
         };

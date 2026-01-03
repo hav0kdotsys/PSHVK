@@ -10,8 +10,8 @@ struct HvkEmissiveBinding
     static constexpr unsigned int kMagic = 0x48564B45; // "HVKE"
 
     unsigned int Magic = kMagic;
-    ImTextureID   BaseTexture = nullptr;
-    ImTextureID   EmissiveTexture = nullptr;
+    ImTextureID   BaseTexture = (ImTextureID)nullptr;
+    ImTextureID   EmissiveTexture = (ImTextureID)nullptr;
     float         EmissiveStrength = 0.0f;
     bool          Additive = false;
 };

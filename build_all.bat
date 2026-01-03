@@ -110,7 +110,7 @@ REM Build Dev x64 Configuration
 echo ========================================
 echo Building: Dev x64
 echo ========================================
-"%MSBUILD_PATH%" "Menu Base.vcxproj" /t:Build /p:Configuration=Dev /p:Platform=x64 /p:VcpkgEnabled=true /m
+"%MSBUILD_PATH%" "Menu Base.vcxproj" /t:Build /p:Configuration=Dev /p:Platform=x64 /p:VcpkgEnabled=true /p:CL=/FS /m
 if errorlevel 1 (
     echo.
     echo ERROR: Dev x64 build failed!
@@ -136,7 +136,7 @@ REM Build Release x64 Configuration
 echo ========================================
 echo Building: Release x64
 echo ========================================
-"%MSBUILD_PATH%" "Menu Base.vcxproj" /t:Build /p:Configuration=Release /p:Platform=x64 /p:VcpkgEnabled=true /m
+"%MSBUILD_PATH%" "Menu Base.vcxproj" /t:Build /p:Configuration=Release /p:Platform=x64 /p:VcpkgEnabled=true /p:CL=/FS /m
 if errorlevel 1 (
     echo.
     echo ERROR: Release x64 build failed!

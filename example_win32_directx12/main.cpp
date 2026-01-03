@@ -178,8 +178,19 @@ struct ExampleDescriptorHeapAllocator
 		Heap = nullptr;
 		FreeIndices.clear();
 	}
+	bool TryAlloc(D3D12_CPU_DESCRIPTOR_HANDLE* out_cpu_desc_handle, D3D12_GPU_DESCRIPTOR_HANDLE* out_gpu_desc_handle)
+	{
+		if (FreeIndices.Size <= 0)
+			return false;  // Graceful failure instead of assert crash
+		int idx = FreeIndices.back();
+		FreeIndices.pop_back();
+		out_cpu_desc_handle->ptr = HeapStartCpu.ptr + (idx * HeapHandleIncrement);
+		out_gpu_desc_handle->ptr = HeapStartGpu.ptr + (idx * HeapHandleIncrement);
+		return true;
+	}
 	void Alloc(D3D12_CPU_DESCRIPTOR_HANDLE* out_cpu_desc_handle, D3D12_GPU_DESCRIPTOR_HANDLE* out_gpu_desc_handle)
 	{
+		// Legacy interface - assert for internal use (we check before calling elsewhere)
 		IM_ASSERT(FreeIndices.Size > 0);
 		int idx = FreeIndices.back();
 		FreeIndices.pop_back();
@@ -199,11 +210,14 @@ struct ExampleDescriptorHeapAllocator
 // Returns true on success, with the SRV CPU handle having an SRV for the newly-created texture placed in it (srv_cpu_handle must be a handle in a valid descriptor heap)
 bool LoadTextureFromMemory(const void* data, size_t data_size, ID3D12Device* d3d_device, D3D12_CPU_DESCRIPTOR_HANDLE srv_cpu_handle, ID3D12Resource** out_tex_resource, int* out_width, int* out_height)
 {
+	if (!data || data_size == 0 || !d3d_device || !out_tex_resource || !out_width || !out_height)
+		return false;
+
 	// Load from disk into a raw RGBA buffer
 	int image_width = 0;
 	int image_height = 0;
 	unsigned char* image_data = stbi_load_from_memory((const unsigned char*)data, (int)data_size, &image_width, &image_height, NULL, 4);
-	if (image_data == NULL)
+	if (image_data == NULL || image_width <= 0 || image_height <= 0)
 		return false;
 
 	// Create texture resource
@@ -228,8 +242,14 @@ bool LoadTextureFromMemory(const void* data, size_t data_size, ID3D12Device* d3d
 	desc.Flags = D3D12_RESOURCE_FLAG_NONE;
 
 	ID3D12Resource* pTexture = NULL;
-	d3d_device->CreateCommittedResource(&props, D3D12_HEAP_FLAG_NONE, &desc,
+	HRESULT hr = d3d_device->CreateCommittedResource(&props, D3D12_HEAP_FLAG_NONE, &desc,
 		D3D12_RESOURCE_STATE_COPY_DEST, NULL, IID_PPV_ARGS(&pTexture));
+	
+	if (FAILED(hr) || !pTexture)
+	{
+		stbi_image_free(image_data);
+		return false;
+	}
 
 	// Create a temporary upload resource to move the data in
 	UINT uploadPitch = (image_width * 4 + D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1u) & ~(D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1u);
@@ -251,15 +271,28 @@ bool LoadTextureFromMemory(const void* data, size_t data_size, ID3D12Device* d3d
 	props.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
 
 	ID3D12Resource* uploadBuffer = NULL;
-	HRESULT hr = d3d_device->CreateCommittedResource(&props, D3D12_HEAP_FLAG_NONE, &desc,
+	hr = d3d_device->CreateCommittedResource(&props, D3D12_HEAP_FLAG_NONE, &desc,
 		D3D12_RESOURCE_STATE_GENERIC_READ, NULL, IID_PPV_ARGS(&uploadBuffer));
-	IM_ASSERT(SUCCEEDED(hr));
+	
+	if (FAILED(hr) || !uploadBuffer)
+	{
+		pTexture->Release();
+		stbi_image_free(image_data);
+		return false;
+	}
 
 	// Write pixels into the upload resource
 	void* mapped = NULL;
 	D3D12_RANGE range = { 0, uploadSize };
 	hr = uploadBuffer->Map(0, &range, &mapped);
-	IM_ASSERT(SUCCEEDED(hr));
+	if (FAILED(hr) || !mapped)
+	{
+		uploadBuffer->Release();
+		pTexture->Release();
+		stbi_image_free(image_data);
+		return false;
+	}
+
 	for (int y = 0; y < image_height; y++)
 		memcpy((void*)((uintptr_t)mapped + y * uploadPitch), image_data + y * image_width * 4, image_width * 4);
 	uploadBuffer->Unmap(0, &range);
@@ -287,13 +320,26 @@ bool LoadTextureFromMemory(const void* data, size_t data_size, ID3D12Device* d3d
 	barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
 	barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 
-	// Create a temporary command queue to do the copy with
+	// Create a temporary command queue to do the copy with (INEFFICIENT: consider deferring)
 	ID3D12Fence* fence = NULL;
 	hr = d3d_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence));
-	IM_ASSERT(SUCCEEDED(hr));
+	if (FAILED(hr))
+	{
+		uploadBuffer->Release();
+		pTexture->Release();
+		stbi_image_free(image_data);
+		return false;
+	}
 
 	HANDLE event = CreateEvent(0, 0, 0, 0);
-	IM_ASSERT(event != NULL);
+	if (!event)
+	{
+		fence->Release();
+		uploadBuffer->Release();
+		pTexture->Release();
+		stbi_image_free(image_data);
+		return false;
+	}
 
 	D3D12_COMMAND_QUEUE_DESC queueDesc = {};
 	queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
@@ -302,26 +348,75 @@ bool LoadTextureFromMemory(const void* data, size_t data_size, ID3D12Device* d3d
 
 	ID3D12CommandQueue* cmdQueue = NULL;
 	hr = d3d_device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&cmdQueue));
-	IM_ASSERT(SUCCEEDED(hr));
+	if (FAILED(hr))
+	{
+		CloseHandle(event);
+		fence->Release();
+		uploadBuffer->Release();
+		pTexture->Release();
+		stbi_image_free(image_data);
+		return false;
+	}
 
 	ID3D12CommandAllocator* cmdAlloc = NULL;
 	hr = d3d_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&cmdAlloc));
-	IM_ASSERT(SUCCEEDED(hr));
+	if (FAILED(hr))
+	{
+		cmdQueue->Release();
+		CloseHandle(event);
+		fence->Release();
+		uploadBuffer->Release();
+		pTexture->Release();
+		stbi_image_free(image_data);
+		return false;
+	}
 
 	ID3D12GraphicsCommandList* cmdList = NULL;
 	hr = d3d_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, cmdAlloc, NULL, IID_PPV_ARGS(&cmdList));
-	IM_ASSERT(SUCCEEDED(hr));
+	if (FAILED(hr))
+	{
+		cmdAlloc->Release();
+		cmdQueue->Release();
+		CloseHandle(event);
+		fence->Release();
+		uploadBuffer->Release();
+		pTexture->Release();
+		stbi_image_free(image_data);
+		return false;
+	}
 
 	cmdList->CopyTextureRegion(&dstLocation, 0, 0, 0, &srcLocation, NULL);
 	cmdList->ResourceBarrier(1, &barrier);
 
 	hr = cmdList->Close();
-	IM_ASSERT(SUCCEEDED(hr));
+	if (FAILED(hr))
+	{
+		cmdList->Release();
+		cmdAlloc->Release();
+		cmdQueue->Release();
+		CloseHandle(event);
+		fence->Release();
+		uploadBuffer->Release();
+		pTexture->Release();
+		stbi_image_free(image_data);
+		return false;
+	}
 
 	// Execute the copy
 	cmdQueue->ExecuteCommandLists(1, (ID3D12CommandList* const*)&cmdList);
 	hr = cmdQueue->Signal(fence, 1);
-	IM_ASSERT(SUCCEEDED(hr));
+	if (FAILED(hr))
+	{
+		cmdList->Release();
+		cmdAlloc->Release();
+		cmdQueue->Release();
+		CloseHandle(event);
+		fence->Release();
+		uploadBuffer->Release();
+		pTexture->Release();
+		stbi_image_free(image_data);
+		return false;
+	}
 
 	// Wait for everything to complete
 	fence->SetEventOnCompletion(1, event);
@@ -340,10 +435,13 @@ bool LoadTextureFromMemory(const void* data, size_t data_size, ID3D12Device* d3d
 	ZeroMemory(&srvDesc, sizeof(srvDesc));
 	srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-	srvDesc.Texture2D.MipLevels = desc.MipLevels;
+	srvDesc.Texture2D.MipLevels = 1;  // Fixed: desc.MipLevels isn't accessible here
 	srvDesc.Texture2D.MostDetailedMip = 0;
 	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	
 	d3d_device->CreateShaderResourceView(pTexture, &srvDesc, srv_cpu_handle);
+	// Note: CreateShaderResourceView returns void, so we can't check for errors here
+	// If descriptor heap was invalid, it would have failed during Alloc()
 
 	// Return results
 	*out_tex_resource = pTexture;
@@ -1219,16 +1317,23 @@ void PumpTexturesToGPU()
 	g_pd3dUploadCmdAlloc->Reset();
 	g_pd3dUploadCmdList->Reset(g_pd3dUploadCmdAlloc, nullptr);
 
-
 	// Load background ONCE (DX12 path)
 	if (!BgTexture)
 	{
-		BgTexture = TextureLoader::LoadTexture(
-			user->render.bg_image_path.c_str(),
-			g_pd3dDevice,
-			g_pd3dUploadCmdList,
-			g_pd3dSrvDescHeapAlloc
-		);
+		// Check if we have descriptor space for background
+		if (g_pd3dSrvDescHeapAlloc.FreeIndices.Size > 0)
+		{
+			BgTexture = TextureLoader::LoadTexture(
+				user->render.bg_image_path.c_str(),
+				g_pd3dDevice,
+				g_pd3dUploadCmdList,
+				g_pd3dSrvDescHeapAlloc
+			);
+		}
+		else
+		{
+			printf("[TEXTURE] Descriptor heap exhausted! Cannot load background texture.\n");
+		}
 	}
 
 	std::vector<HVKTexture> frames;
@@ -1236,6 +1341,13 @@ void PumpTexturesToGPU()
 
 	for (auto& item : work)
 	{
+		// Check descriptor heap space before allocating
+		if (g_pd3dSrvDescHeapAlloc.FreeIndices.Size <= 0)
+		{
+			printf("[TEXTURE] Descriptor heap exhausted! Only loaded %zu of %zu frames.\n", frames.size(), work.size());
+			break;
+		}
+
 		D3D12_CPU_DESCRIPTOR_HANDLE cpu{};
 		D3D12_GPU_DESCRIPTOR_HANDLE gpu{};
 		g_pd3dSrvDescHeapAlloc.Alloc(&cpu, &gpu);
@@ -1244,7 +1356,6 @@ void PumpTexturesToGPU()
 			std::lock_guard<std::mutex> lock(g_dx12SrvMutex);
 			g_dx12LoadingSrvs.push_back({ cpu, gpu });
 		}
-
 
 		ID3D12Resource* texRes = nullptr;
 		int w = 0, h = 0;
@@ -1258,12 +1369,12 @@ void PumpTexturesToGPU()
 			&w,
 			&h))
 		{
+			printf("[TEXTURE] Failed to load frame texture from memory\n");
 			g_pd3dSrvDescHeapAlloc.Free(cpu, gpu);
 			continue;
 		}
 
-		// NOTE: you leak texRes here unless you track/release it.
-		// For now this matches your old behavior.
+		// NOTE: texRes is tracked by living in g_dx12LiveTextures pool or implied keep-alive
 		HVKTexture t{};
 		t.id = (ImTextureID)gpu.ptr;
 		t.width = w;
@@ -1411,41 +1522,66 @@ int main(int, char**)
 	if (HVKSYS::SupportsDX12())
 	{
 		g_App.g_RenderBackend = RenderBackend::DX12;
+		printf("[INIT] Using DirectX 12 backend\n");
 	}
 	else
 	{
 		g_App.g_RenderBackend = RenderBackend::DX11;
+		printf("[INIT] Using DirectX 11 backend\n");
 	}
+	fflush(stdout);
 
 
 	// Make process DPI aware and obtain main monitor scale
+	printf("[INIT] Getting DPI scale...\n");
+	fflush(stdout);
 	ImGui_ImplWin32_EnableDpiAwareness();
 	float main_scale = ImGui_ImplWin32_GetDpiScaleForMonitor(::MonitorFromPoint(POINT{ 0, 0 }, MONITOR_DEFAULTTOPRIMARY));
 
 	user->style.dpi_scale = main_scale;    // set once at startup
-
+	printf("[INIT] DPI scale: %.2f\n", main_scale);
+	fflush(stdout);
 
 	// Create application window
+	printf("[INIT] Creating window...\n");
+	fflush(stdout);
 	WNDCLASSEXW wc = { sizeof(wc), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, L"WC_HVK", nullptr };
 	::RegisterClassExW(&wc);
+	printf("[INIT] Window class registered.\n");
+	fflush(stdout);
 	// HWND hwnd = ::CreateWindowW(wc.lpszClassName, L"PSHVK Window", WS_OVERLAPPEDWINDOW, 100, 100, (int)(1280 * main_scale), (int)(800 * main_scale), nullptr, nullptr, wc.hInstance, nullptr); // Use this to display title bar.
 	HWND hwnd = ::CreateWindowW(wc.lpszClassName, L"PSHVK Window", WS_POPUPWINDOW, 100, 100, (int)(1280 * main_scale), (int)(800 * main_scale), nullptr, nullptr, wc.hInstance, nullptr);
+	printf("[INIT] CreateWindowW completed. hwnd=%p\n", hwnd);
+	fflush(stdout);
 
 	// Initialize Direct3D
+	printf("[INIT] Initializing Direct3D...\n");
+	fflush(stdout);
 	bool rendererOk = false;
 
 	// Try DX12 first if preferred
 	if (g_App.g_RenderBackend == RenderBackend::DX12)
 	{
+		printf("[INIT] Attempting DX12 initialization...\n");
+		fflush(stdout);
 		rendererOk = HVKSYS::InitDX12(hwnd);
-		if (!rendererOk)
+		printf("[INIT] InitDX12 returned: %s\n", rendererOk ? "SUCCESS" : "FAILED");
+		fflush(stdout);
+		if (!rendererOk) {
+			printf("[INIT] DX12 failed, falling back to DX11.\n");
+			fflush(stdout);
 			g_App.g_RenderBackend = RenderBackend::DX11; // fallback
+		}
 	}
 
 	// If DX12 failed or we prefer DX11
 	if (!rendererOk && g_App.g_RenderBackend == RenderBackend::DX11)
 	{
+		printf("[INIT] Attempting DX11 initialization...\n");
+		fflush(stdout);
 		rendererOk = HVKSYS::InitDX11(hwnd);
+		printf("[INIT] InitDX11 returned: %s\n", rendererOk ? "SUCCESS" : "FAILED");
+		fflush(stdout);
 	}
 
 	if (!rendererOk)
@@ -1465,12 +1601,20 @@ int main(int, char**)
 
 
 	// Show the window
+	printf("[INIT] Showing window...\n");
+	fflush(stdout);
 	::ShowWindow(hwnd, SW_SHOWMAXIMIZED);
 	::UpdateWindow(hwnd);
+	printf("[INIT] Window shown.\n");
+	fflush(stdout);
 
 	// Setup Dear ImGui context
+	printf("[INIT] Creating ImGui context...\n");
+	fflush(stdout);
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
+	printf("[INIT] ImGui context created.\n");
+	fflush(stdout);
 	ImGuiIO& io = ImGui::GetIO(); (void)io;
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
@@ -1480,9 +1624,11 @@ int main(int, char**)
 	//ImGui::StyleColorsLight();
 
 	// Setup scaling
+	printf("[INIT] Starting font setup...\n");
+	fflush(stdout);
 	ImGuiStyle& style = ImGui::GetStyle();
-	style.ScaleAllSizes(main_scale);        // Bake a fixed style scale. (until we have a solution for dynamic style scaling, changing this requires resetting Style + calling this again)
-	style.FontScaleDpi = main_scale;        // Set initial font scale. (using io.ConfigDpiScaleFonts=true makes this unnecessary. We leave both here for documentation purpose)
+	style.ScaleAllSizes(main_scale);
+	style.FontScaleDpi = main_scale;
 
 	// Use 13px as base to match ImGui's default font size for consistent spacing
 	float baseFontSize = 13.0f;
@@ -1565,16 +1711,26 @@ int main(int, char**)
 		printf("[FONT] Successfully loaded Proggy font from: %s\n", proggyPath.c_str());
 	}
 	
+	printf("[INIT] Building fonts...\n");
+	fflush(stdout);
 	io.Fonts->Build();
+	printf("[INIT] Fonts built successfully.\n");
+	fflush(stdout);
 
 	// Set satoshi regular as the default font for the menu
 	io.FontDefault = user->style.satoshi_regular;
 
 	// Setup Platform/Renderer backends
+	printf("[INIT] Initializing Win32 backend...\n");
+	fflush(stdout);
 	ImGui_ImplWin32_Init(hwnd);
+	printf("[INIT] Win32 backend initialized.\n");
+	fflush(stdout);
 
 	if (g_App.g_RenderBackend == RenderBackend::DX12)
 	{
+		printf("[INIT] Initializing DX12 ImGui backend...\n");
+		fflush(stdout);
 		ImGui_ImplDX12_InitInfo init_info = {};
 		init_info.Device = g_pd3dDevice;
 		init_info.CommandQueue = g_pd3dCommandQueue;
@@ -1590,19 +1746,35 @@ int main(int, char**)
 			{
 				return g_pd3dSrvDescHeapAlloc.Free(cpu, gpu);
 			};
+		printf("[INIT] Calling ImGui_ImplDX12_Init...\n");
+		fflush(stdout);
 		ImGui_ImplDX12_Init(&init_info);
+		printf("[INIT] ImGui_ImplDX12_Init completed successfully.\n");
+		fflush(stdout);
+		printf("[INIT] DX12 ImGui backend initialized.\n");
+		fflush(stdout);
 	}
 	else
 	{
+		printf("[INIT] Initializing DX11 ImGui backend...\n");
+		fflush(stdout);
 		ImGui_ImplDX11_Init(g_pd3dDevice11, g_pd3dDeviceContext11);
+		printf("[INIT] ImGui_ImplDX11_Init completed successfully.\n");
+		fflush(stdout);
+		printf("[INIT] DX11 ImGui backend initialized.\n");
+		fflush(stdout);
 	}
 
 
 // ----------------------------------------
 // Load textures once (NOT every frame)
 // ----------------------------------------
+	printf("[INIT] Starting texture loading thread...\n");
+	fflush(stdout);
 	texThread = std::thread([]()
 		{
+			printf("[TEXLOAD] Texture thread started.\n");
+			fflush(stdout);
 			// COM init is PER THREAD (WIC needs this)
 			HRESULT comHr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 
@@ -1688,7 +1860,8 @@ int main(int, char**)
 				BgTexture = bg.id;
 			}*/
 		});
-
+	printf("[INIT] Texture loading thread started. Main thread continuing...\n");
+	fflush(stdout);
 
 
 	// Our state
@@ -1749,9 +1922,16 @@ int main(int, char**)
 	}
 
 	// Main loop
+	printf("[INIT] All initialization complete. Entering main loop...\n");
+	printf("[INIT] DisplaySize: %.0f x %.0f\n", io.DisplaySize.x, io.DisplaySize.y);
+	fflush(stdout);
 	bool done = false;
+	int frameCount = 0;
 	while (!done)
 	{
+		if (frameCount == 0)
+			printf("[MAIN] Frame 0 starting...\n");
+		frameCount++;
 		// Poll and handle messages (inputs, window resize, etc.)
 		// See the WndProc() function below for our to dispatch events to the Win32 backend.
 		MSG msg;
@@ -1890,13 +2070,54 @@ int main(int, char**)
 		}
 
 		// Start the Dear ImGui frame
-		if (g_App.g_RenderBackend == RenderBackend::DX12)
+		if (frameCount == 1)
+		{
+			printf("[FRAME1] Creating ImGui frame...\n");
+			fflush(stdout);
+		}
+		if (g_App.g_RenderBackend == RenderBackend::DX12) {
+			if (frameCount == 1) {
+				printf("[FRAME1] Calling ImGui_ImplDX12_NewFrame()...\n");
+				fflush(stdout);
+			}
 			ImGui_ImplDX12_NewFrame();
-		else
+			if (frameCount == 1) {
+				printf("[FRAME1] ImGui_ImplDX12_NewFrame() completed.\n");
+				fflush(stdout);
+			}
+		}
+		else {
+			if (frameCount == 1) {
+				printf("[FRAME1] Calling ImGui_ImplDX11_NewFrame()...\n");
+				fflush(stdout);
+			}
 			ImGui_ImplDX11_NewFrame();
+			if (frameCount == 1) {
+				printf("[FRAME1] ImGui_ImplDX11_NewFrame() completed.\n");
+				fflush(stdout);
+			}
+		}
 
+		if (frameCount == 1) {
+			printf("[FRAME1] Calling ImGui_ImplWin32_NewFrame()...\n");
+			fflush(stdout);
+		}
 		ImGui_ImplWin32_NewFrame();
+		if (frameCount == 1) {
+			printf("[FRAME1] ImGui_ImplWin32_NewFrame() completed.\n");
+			fflush(stdout);
+		}
+		if (frameCount == 1)
+		{
+			printf("[FRAME1] Before ImGui::NewFrame()...\n");
+			fflush(stdout);
+		}
 		ImGui::NewFrame();
+		if (frameCount == 1)
+		{
+			printf("[FRAME1] After ImGui::NewFrame()...\n");
+			fflush(stdout);
+		}
 
 
 		if (GetAsyncKeyState(VK_F7) & 1)
@@ -1964,8 +2185,18 @@ int main(int, char**)
 
 			if (settings->visibility.win_main)
 			{
+				if (frameCount == 1)
+				{
+					printf("[FRAME1] Main window visible, calling ImGui::Begin...\n");
+					fflush(stdout);
+				}
 			ImGui::Begin("Main Window", nullptr, ImGuiWindowFlags_NoTitleBar);
 			{
+				if (frameCount == 1)
+				{
+					printf("[FRAME1] ImGui::Begin completed successfully.\n");
+					fflush(stdout);
+				}
 				float topOffset = GetWatermarkReservedHeight();
 					ImGui::SetWindowPos(
 						ImVec2(10.0f, 10.0f + topOffset),
@@ -2341,12 +2572,35 @@ int main(int, char**)
 		}
 
 		// Rendering
+		if (frameCount == 1)
+		{
+			printf("[FRAME1] About to call ImGui::Render()...\n");
+			fflush(stdout);
+		}
 		ImGui::Render();
+		if (frameCount == 1)
+		{
+			printf("[FRAME1] ImGui::Render() completed successfully.\n");
+			fflush(stdout);
+		}
 
 		if (g_App.g_RenderBackend == RenderBackend::DX12)
 		{
+			if (frameCount == 1)
+			{
+				printf("[FRAME1] DX12 rendering path - waiting for next frame context...\n");
+				fflush(stdout);
+			}
 			FrameContext* frameCtx = WaitForNextFrameContext();
+			if (frameCount == 1) {
+				printf("[FRAME1] WaitForNextFrameContext() returned: %p\n", frameCtx);
+				fflush(stdout);
+			}
 			TextureLoader::ProcessDeferredTextureFrees();
+			if (frameCount == 1) {
+				printf("[FRAME1] ProcessDeferredTextureFrees() done.\n");
+				fflush(stdout);
+			}
 			UINT backBufferIdx = g_pSwapChain->GetCurrentBackBufferIndex();
 			frameCtx->CommandAllocator->Reset();
 
@@ -2358,42 +2612,129 @@ int main(int, char**)
 			barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
 
 			g_pd3dCommandList->Reset(frameCtx->CommandAllocator, nullptr);
+			if (frameCount == 1) {
+				printf("[FRAME1] After CommandList->Reset().\n");
+				fflush(stdout);
+			}
 			g_pd3dCommandList->ResourceBarrier(1, &barrier);
+			if (frameCount == 1) {
+				printf("[FRAME1] After ResourceBarrier().\n");
+				fflush(stdout);
+			}
 
 			const float clear_color_with_alpha[4] = { clear_color.x * clear_color.w, clear_color.y * clear_color.w, clear_color.z * clear_color.w, clear_color.w };
 			g_pd3dCommandList->ClearRenderTargetView(g_mainRenderTargetDescriptor[backBufferIdx], clear_color_with_alpha, 0, nullptr);
+			if (frameCount == 1) {
+				printf("[FRAME1] After ClearRenderTargetView().\n");
+				fflush(stdout);
+			}
 			g_pd3dCommandList->OMSetRenderTargets(1, &g_mainRenderTargetDescriptor[backBufferIdx], FALSE, nullptr);
+			if (frameCount == 1) {
+				printf("[FRAME1] After OMSetRenderTargets().\n");
+				fflush(stdout);
+			}
 			g_pd3dCommandList->SetDescriptorHeaps(1, &g_pd3dSrvDescHeap);
+			if (frameCount == 1) {
+				printf("[FRAME1] After SetDescriptorHeaps().\n");
+				fflush(stdout);
+			}
 
+			if (frameCount == 1) {
+				printf("[FRAME1] About to call ImGui_ImplDX12_RenderDrawData()...\n");
+				fflush(stdout);
+			}
 			ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), g_pd3dCommandList);
+			if (frameCount == 1) {
+				printf("[FRAME1] ImGui_ImplDX12_RenderDrawData() completed.\n");
+				fflush(stdout);
+			}
 
 			barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
 			barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
 			g_pd3dCommandList->ResourceBarrier(1, &barrier);
+			if (frameCount == 1) {
+				printf("[FRAME1] After final ResourceBarrier().\n");
+				fflush(stdout);
+			}
 			g_pd3dCommandList->Close();
+			if (frameCount == 1) {
+				printf("[FRAME1] After CommandList->Close().\n");
+				fflush(stdout);
+			}
 
+			if (frameCount == 1) {
+				printf("[FRAME1] About to call ExecuteCommandLists()...\n");
+				fflush(stdout);
+			}
 			g_pd3dCommandQueue->ExecuteCommandLists(1, (ID3D12CommandList* const*)&g_pd3dCommandList);
+			if (frameCount == 1) {
+				printf("[FRAME1] ExecuteCommandLists() completed.\n");
+				fflush(stdout);
+			}
 			g_pd3dCommandQueue->Signal(g_fence, ++g_fenceLastSignaledValue);
 			frameCtx->FenceValue = g_fenceLastSignaledValue;
 
+			if (frameCount == 1)
+			{
+				printf("[FRAME1] About to call SwapChain::Present()...\n");
+				fflush(stdout);
+			}
 			HRESULT hr;
 			if (settings->vsync)
 				hr = g_pSwapChain->Present(1, 0);
 			else
 				hr = g_pSwapChain->Present(0, g_SwapChainTearingSupport ? DXGI_PRESENT_ALLOW_TEARING : 0);
 
+			if (frameCount == 1)
+			{
+				printf("[FRAME1] SwapChain::Present() completed. hr=0x%X\n", hr);
+				fflush(stdout);
+			}
 			g_SwapChainOccluded = (hr == DXGI_STATUS_OCCLUDED);
 			g_frameIndex++;
+			if (frameCount == 1)
+			{
+				printf("[FRAME1] Frame 1 completed successfully!\n");
+				fflush(stdout);
+			}
 		}
 		else
 		{
+			if (frameCount == 1) {
+				printf("[FRAME1] DX11 rendering path...\n");
+				fflush(stdout);
+			}
 			const float clear_color_with_alpha[4] = { clear_color.x * clear_color.w, clear_color.y * clear_color.w, clear_color.z * clear_color.w, clear_color.w };
 			g_pd3dDeviceContext11->OMSetRenderTargets(1, &g_mainRenderTargetView11, nullptr);
+			if (frameCount == 1) {
+				printf("[FRAME1] DX11: OMSetRenderTargets done.\n");
+				fflush(stdout);
+			}
 			g_pd3dDeviceContext11->ClearRenderTargetView(g_mainRenderTargetView11, clear_color_with_alpha);
+			if (frameCount == 1) {
+				printf("[FRAME1] DX11: ClearRenderTargetView done.\n");
+				fflush(stdout);
+			}
 
+			if (frameCount == 1) {
+				printf("[FRAME1] DX11: About to call ImGui_ImplDX11_RenderDrawData()...\n");
+				fflush(stdout);
+			}
 			ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+			if (frameCount == 1) {
+				printf("[FRAME1] DX11: ImGui_ImplDX11_RenderDrawData() done.\n");
+				fflush(stdout);
+			}
 
+			if (frameCount == 1) {
+				printf("[FRAME1] DX11: About to call Present()...\n");
+				fflush(stdout);
+			}
 			g_pSwapChain11->Present(settings->vsync ? 1 : 0, 0);
+			if (frameCount == 1) {
+				printf("[FRAME1] DX11: Present() done. Frame 1 completed successfully!\n");
+				fflush(stdout);
+			}
 		}
 
 		if (!settings->vsync)

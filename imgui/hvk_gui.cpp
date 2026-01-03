@@ -399,14 +399,14 @@ namespace HvkGui
 			totalWidth += tabWidths[i];
 		}
 
-		// Calculate starting position (center the tabs)
-		ImVec2 cursorPos = window->DC.CursorPos;
+		// Calculate starting position in window-local space
+		ImVec2 windowLocalCursorPos = window->DC.CursorPos;
 		ImVec2 availableSize = ImGui::GetContentRegionAvail();
-		float startX = cursorPos.x + (availableSize.x - totalWidth) * 0.5f;
+		float startXLocal = windowLocalCursorPos.x + (availableSize.x - totalWidth) * 0.5f;
+		float tabYLocal = windowLocalCursorPos.y + verticalPadding;
 		
-		// Add vertical padding
-		if (verticalPadding > 0.0f)
-			ImGui::SetCursorPosY(cursorPos.y + verticalPadding);
+		// Convert to screen space for rendering
+		ImVec2 startScreenPos = ImVec2(startXLocal + window->Pos.x, tabYLocal + window->Pos.y);
 
 		ImDrawList* drawList = ImGui::GetWindowDrawList();
 
@@ -416,9 +416,9 @@ namespace HvkGui
 			if (i == activeTab)
 				continue;
 
-			float x = startX;
+			float xLocal = startXLocal;
 			for (int j = 0; j < i; j++)
-				x += tabWidths[j];
+				xLocal += tabWidths[j];
 
 			ImFont* fontToUse = unselectedFont ? unselectedFont : defaultFont;
 			float fontSize = unselSize;
@@ -429,13 +429,17 @@ namespace HvkGui
 			else
 				textSize = ImGui::CalcTextSize(labels[i]);
 
-			ImVec2 textPos(
-				x + (tabWidths[i] - textSize.x) * 0.5f,
-				cursorPos.y + verticalPadding + (textSize.y * 0.5f)
+			// Screen-space position for rendering
+			ImVec2 textScreenPos(
+				xLocal + window->Pos.x + (tabWidths[i] - textSize.x) * 0.5f,
+				tabYLocal + window->Pos.y + (textSize.y * 0.5f)
 			);
 
-			// Check for click
-			ImRect tabRect(ImVec2(x, cursorPos.y + verticalPadding), ImVec2(x + tabWidths[i], cursorPos.y + verticalPadding + textSize.y * 1.5f));
+			// Check for click using screen-space rect
+			ImRect tabRect(
+				ImVec2(xLocal + window->Pos.x, tabYLocal + window->Pos.y),
+				ImVec2(xLocal + window->Pos.x + tabWidths[i], tabYLocal + window->Pos.y + textSize.y * 1.5f)
+			);
 			ImGuiID tabId = window->GetID((void*)(intptr_t)(i + 1000));
 			
 			bool hovered = ImGui::IsMouseHoveringRect(tabRect.Min, tabRect.Max);
@@ -447,17 +451,17 @@ namespace HvkGui
 
 			// Render unselected text
 			if (fontToUse)
-				drawList->AddText(fontToUse, fontSize, textPos, unselectedColor, labels[i], NULL);
+				drawList->AddText(fontToUse, fontSize, textScreenPos, unselectedColor, labels[i], NULL);
 			else
-				drawList->AddText(textPos, unselectedColor, labels[i]);
+				drawList->AddText(textScreenPos, unselectedColor, labels[i]);
 		}
 
 		// Second pass: Render selected tab with glow
 		if (activeTab >= 0 && activeTab < count)
 		{
-			float x = startX;
+			float xLocal = startXLocal;
 			for (int j = 0; j < activeTab; j++)
-				x += tabWidths[j];
+				xLocal += tabWidths[j];
 
 			ImFont* fontToUse = selectedFont ? selectedFont : defaultFont;
 			float fontSize = selSize;
@@ -468,26 +472,24 @@ namespace HvkGui
 			else
 				textSize = ImGui::CalcTextSize(labels[activeTab]);
 
-			ImVec2 textPos(
-				x + (tabWidths[activeTab] - textSize.x) * 0.5f,
-				cursorPos.y + verticalPadding + (textSize.y * 0.5f)
+			// Screen-space position for rendering
+			ImVec2 textScreenPos(
+				xLocal + window->Pos.x + (tabWidths[activeTab] - textSize.x) * 0.5f,
+				tabYLocal + window->Pos.y + (textSize.y * 0.5f)
 			);
 
-			// Render glow effect - we need to use drawList directly since CustomTabBar has custom positioning
-			// Save and restore cursor position to use GlowText's internal logic
+			// Render glow effect - use screen space directly
 			ImVec2 savedCursorPos = window->DC.CursorPos;
-			window->DC.CursorPos = textPos;
+			window->DC.CursorPos = textScreenPos - window->Pos;  // Convert back to window-local for GlowText
 			
-			// Temporarily use GlowText, then restore cursor
 			GlowText(fontToUse, fontSize, selectedColor, labels[activeTab],
 				glowColor, glowSize, glowIntensity);
 			
-			// Restore original cursor position (we don't want cursor advancement in CustomTabBar)
 			window->DC.CursorPos = savedCursorPos;
 		}
 
-		// Update cursor position
-		ImGui::SetCursorPosY(cursorPos.y + verticalPadding * 2.0f + (selectedFontSize > 0.0f ? selectedFontSize : defaultFontSize) * 1.5f);
+		// Update cursor position in window-local space
+		ImGui::SetCursorPosY(windowLocalCursorPos.y + verticalPadding * 2.0f + (selectedFontSize > 0.0f ? selectedFontSize : defaultFontSize) * 1.5f);
 
 		return tabChanged;
 	}
