@@ -419,25 +419,19 @@ static IDXGISwapChain* g_pSwapChain11 = nullptr;
 static ID3D11RenderTargetView* g_mainRenderTargetView11 = nullptr;
 static bool LoadTextureUnified(const wchar_t* path, HVKTexture& outTex)
 {
-	if (g_App.g_RenderBackend == RenderBackend::DX12)
-	{
-		// DX12 path – wrap the old function
-		ImTextureID id = TextureLoader::LoadTexture(
-			path,
-			g_pd3dDevice,
-			g_pd3dCommandList,
-			g_pd3dSrvDescHeapAlloc
-		);
-
-		if (!id)
-			return false;
-
-		outTex.id = id;
-		return true;
-	}
-	else
-	{
-		// DX11 path
+        if (g_App.g_RenderBackend == RenderBackend::DX12)
+        {
+                return TextureLoader::LoadTexture(
+                        path,
+                        g_pd3dDevice,
+                        g_pd3dCommandList,
+                        g_pd3dSrvDescHeapAlloc,
+                        outTex
+                );
+        }
+        else
+        {
+                // DX11 path
 		return TextureLoader::LoadTextureDX11FromFile(
 			g_pd3dDevice11,
 			g_pd3dDeviceContext11,
@@ -561,32 +555,33 @@ void TextureLoader::ProcessDeferredTextureFrees()
 
 bool TextureLoader::ReloadBackgroundTexture(const std::wstring& newPath)
 {
-	if (g_App.g_RenderBackend == RenderBackend::DX11)
-	{
-		if (BgTexture)
-		{
-			HVKTexture tmp{ BgTexture };
-			TextureLoader::FreeTexture(tmp, g_App);
-			BgTexture = (ImTextureID)nullptr;
-		}
+        if (g_App.g_RenderBackend == RenderBackend::DX11)
+        {
+                if (BgTexture)
+                {
+                        TextureLoader::FreeTexture(bg, g_App);
+                        bg = {};
+                        BgTexture = (ImTextureID)nullptr;
+                }
 
-		HVKTexture bg{};
-		if (!LoadTextureUnified(newPath.c_str(), bg))
-			return false;
+                HVKTexture newBg{};
+                if (!LoadTextureUnified(newPath.c_str(), newBg))
+                        return false;
 
-		BgTexture = bg.id;
-		return true;
-	}
+                bg = newBg;
+                BgTexture = bg.id;
+                return true;
+        }
 
 	// ---------- DX12 ----------
 
 	// Defer old texture free
-	if (BgTexture)
-	{
-		HVKTexture old{ BgTexture };
-		TextureLoader::DeferFreeTexture(old);
-		BgTexture = (ImTextureID)nullptr;
-	}
+        if (BgTexture)
+        {
+                TextureLoader::DeferFreeTexture(bg);
+                bg = {};
+                BgTexture = (ImTextureID)nullptr;
+        }
 
 	// Dedicated upload objects
 	ID3D12CommandAllocator* alloc = nullptr;
@@ -605,15 +600,14 @@ bool TextureLoader::ReloadBackgroundTexture(const std::wstring& newPath)
 		IID_PPV_ARGS(&list)
 	);
 
-	ImTextureID newTex = TextureLoader::LoadTexture(
-		newPath.c_str(),
-		g_pd3dDevice,
-		list,
-		g_pd3dSrvDescHeapAlloc
-	);
-
-	if (!newTex)
-		return false;
+        HVKTexture newTex{};
+        if (!TextureLoader::LoadTexture(
+                newPath.c_str(),
+                g_pd3dDevice,
+                list,
+                g_pd3dSrvDescHeapAlloc,
+                newTex))
+                return false;
 
 	list->Close();
 	ID3D12CommandList* lists[] = { list };
@@ -628,8 +622,9 @@ bool TextureLoader::ReloadBackgroundTexture(const std::wstring& newPath)
 	list->Release();
 	alloc->Release();
 
-	BgTexture = newTex;
-	return true;
+        bg = newTex;
+        BgTexture = newTex.id;
+        return true;
 }
 
 static void RequestBackgroundReload(const std::wstring& newPath)
@@ -1045,18 +1040,20 @@ static void ApplyBgReloadDX11IfReady()
 		path = g_bgJob.path;
 	}
 
-	// Free old
-	if (BgTexture)
-	{
-		HVKTexture tmp{};
-		tmp.id = BgTexture;
-		TextureLoader::FreeTexture(tmp, g_App);
-		BgTexture = (ImTextureID)nullptr;
-	}
+        // Free old
+        if (BgTexture)
+        {
+                TextureLoader::FreeTexture(bg, g_App);
+                bg = {};
+                BgTexture = (ImTextureID)nullptr;
+        }
 
-	HVKTexture tex{};
-	if (LoadTextureUnified(path.c_str(), tex))
-		BgTexture = tex.id;
+        HVKTexture tex{};
+        if (LoadTextureUnified(path.c_str(), tex))
+        {
+                bg = tex;
+                BgTexture = tex.id;
+        }
 
 	// reset job
 	g_bgJob.requested.store(false);
@@ -1220,16 +1217,21 @@ void PumpTexturesToGPU()
 	g_pd3dUploadCmdList->Reset(g_pd3dUploadCmdAlloc, nullptr);
 
 
-	// Load background ONCE (DX12 path)
-	if (!BgTexture)
-	{
-		BgTexture = TextureLoader::LoadTexture(
-			user->render.bg_image_path.c_str(),
-			g_pd3dDevice,
-			g_pd3dUploadCmdList,
-			g_pd3dSrvDescHeapAlloc
-		);
-	}
+        // Load background ONCE (DX12 path)
+        if (!BgTexture)
+        {
+                HVKTexture loaded{};
+                if (TextureLoader::LoadTexture(
+                        user->render.bg_image_path.c_str(),
+                        g_pd3dDevice,
+                        g_pd3dUploadCmdList,
+                        g_pd3dSrvDescHeapAlloc,
+                        loaded))
+                {
+                        bg = loaded;
+                        BgTexture = loaded.id;
+                }
+        }
 
 	std::vector<HVKTexture> frames;
 	frames.reserve(work.size());
@@ -2416,16 +2418,15 @@ int main(int, char**)
 		for (auto& t : g_LoadingFrames)
 			TextureLoader::FreeTexture(t, g_App);
 
-		g_LoadingFrames.clear();
+                g_LoadingFrames.clear();
 
-		if (BgTexture)
-		{
-			HVKTexture tmp{};
-			tmp.id = BgTexture;
-			TextureLoader::FreeTexture(tmp, g_App);
-			BgTexture = (ImTextureID)nullptr;
-		}
-	}
+                if (BgTexture)
+                {
+                        TextureLoader::FreeTexture(bg, g_App);
+                        bg = {};
+                        BgTexture = (ImTextureID)nullptr;
+                }
+        }
 
 
 	// Cleanup
