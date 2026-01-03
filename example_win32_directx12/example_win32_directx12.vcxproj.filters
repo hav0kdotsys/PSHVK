@@ -62,4 +62,13 @@
       <Filter>imgui</Filter>
     </Natvis>
   </ItemGroup>
+
+  <ItemGroup>
+    <ClInclude Include="glow_pipeline.h">
+      <Filter>sources</Filter>
+    </ClInclude>
+    <ClCompile Include="glow_pipeline.cpp">
+      <Filter>sources</Filter>
+    </ClCompile>
+  </ItemGroup>
 </Project>
