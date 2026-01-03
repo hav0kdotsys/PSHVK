@@ -16,9 +16,28 @@
 
 struct HVKTexture
 {
-	ImTextureID id = (ImTextureID)nullptr;
-	int width = 0;
-	int height = 0;
+        HVKTexture() = default;
+        explicit HVKTexture(ImTextureID baseId) : id(baseId) {}
+
+        ImTextureID id = (ImTextureID)nullptr;
+        ImTextureID emissiveId = (ImTextureID)nullptr;
+        int width = 0;
+        int height = 0;
+
+        // DX11 resources
+        ID3D11ShaderResourceView* baseSrv = nullptr;
+        ID3D11ShaderResourceView* emissiveSrv = nullptr;
+
+        // DX12 descriptors/resources
+        D3D12_CPU_DESCRIPTOR_HANDLE baseCpu = { 0 };
+        D3D12_GPU_DESCRIPTOR_HANDLE baseGpu = { 0 };
+        ID3D12Resource* baseResource = nullptr;
+        ID3D12Resource* baseUpload = nullptr;
+
+        D3D12_CPU_DESCRIPTOR_HANDLE emissiveCpu = { 0 };
+        D3D12_GPU_DESCRIPTOR_HANDLE emissiveGpu = { 0 };
+        ID3D12Resource* emissiveResource = nullptr;
+        ID3D12Resource* emissiveUpload = nullptr;
 };
 
 struct DeferredTextureFree
@@ -38,12 +57,13 @@ public:
 	static bool ReloadBackgroundTexture(const std::wstring& newPath);
 
 	// Loads a texture file and returns an ImGui texture ID
-	static ImTextureID LoadTexture(
-		const wchar_t* filePath,
-		ID3D12Device* device,
-		ID3D12GraphicsCommandList* cmdList,
-		class ExampleDescriptorHeapAllocator& alloc
-	);
+        static bool LoadTexture(
+                const wchar_t* filePath,
+                ID3D12Device* device,
+                ID3D12GraphicsCommandList* cmdList,
+                class ExampleDescriptorHeapAllocator& alloc,
+                HVKTexture& outTex
+        );
 
 	// Pass in a vector of frames and it will return the next frame in the cycle as an ImTextureID
 	static ImTextureID CycleFrames(
