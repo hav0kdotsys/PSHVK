@@ -44,6 +44,7 @@
 #include "imgui.h"
 #ifndef IMGUI_DISABLE
 #include "imgui_impl_dx11.h"
+#include "../hvk_emissive.h"
 
 // DirectX
 #include <stdio.h>
@@ -76,6 +77,7 @@ struct ImGui_ImplDX11_Data
     ID3D11VertexShader*         pVertexShader;
     ID3D11InputLayout*          pInputLayout;
     ID3D11Buffer*               pVertexConstantBuffer;
+    ID3D11Buffer*               pPixelConstantBuffer;
     ID3D11PixelShader*          pPixelShader;
     ID3D11SamplerState*         pTexSamplerLinear;
     ID3D11RasterizerState*      pRasterizerState;
@@ -90,6 +92,13 @@ struct ImGui_ImplDX11_Data
 struct VERTEX_CONSTANT_BUFFER_DX11
 {
     float   mvp[4][4];
+};
+
+struct PIXEL_CONSTANT_BUFFER_DX11
+{
+    float emissiveStrength;
+    float additiveBlend;
+    float padding[2];
 };
 
 // Backend data stored in io.BackendRendererUserData to allow support for multiple Dear ImGui contexts
@@ -134,6 +143,15 @@ static void ImGui_ImplDX11_SetupRenderState(const ImDrawData* draw_data, ID3D11D
         device_ctx->Unmap(bd->pVertexConstantBuffer, 0);
     }
 
+    if (device_ctx->Map(bd->pPixelConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_resource) == S_OK)
+    {
+        PIXEL_CONSTANT_BUFFER_DX11* pixel_constants = (PIXEL_CONSTANT_BUFFER_DX11*)mapped_resource.pData;
+        pixel_constants->emissiveStrength = 0.0f;
+        pixel_constants->additiveBlend = 0.0f;
+        pixel_constants->padding[0] = pixel_constants->padding[1] = 0.0f;
+        device_ctx->Unmap(bd->pPixelConstantBuffer, 0);
+    }
+
     // Setup shader and vertex buffers
     unsigned int stride = sizeof(ImDrawVert);
     unsigned int offset = 0;
@@ -143,6 +161,7 @@ static void ImGui_ImplDX11_SetupRenderState(const ImDrawData* draw_data, ID3D11D
     device_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     device_ctx->VSSetShader(bd->pVertexShader, nullptr, 0);
     device_ctx->VSSetConstantBuffers(0, 1, &bd->pVertexConstantBuffer);
+    device_ctx->PSSetConstantBuffers(1, 1, &bd->pPixelConstantBuffer);
     device_ctx->PSSetShader(bd->pPixelShader, nullptr, 0);
     device_ctx->PSSetSamplers(0, 1, &bd->pTexSamplerLinear);
     device_ctx->GSSetShader(nullptr, nullptr, 0);
@@ -231,7 +250,7 @@ void ImGui_ImplDX11_RenderDrawData(ImDrawData* draw_data)
         UINT                        SampleMask;
         UINT                        StencilRef;
         ID3D11DepthStencilState*    DepthStencilState;
-        ID3D11ShaderResourceView*   PSShaderResource;
+        ID3D11ShaderResourceView*   PSShaderResource[2];
         ID3D11SamplerState*         PSSampler;
         ID3D11PixelShader*          PS;
         ID3D11VertexShader*         VS;
@@ -239,7 +258,7 @@ void ImGui_ImplDX11_RenderDrawData(ImDrawData* draw_data)
         UINT                        PSInstancesCount, VSInstancesCount, GSInstancesCount;
         ID3D11ClassInstance         *PSInstances[256], *VSInstances[256], *GSInstances[256];   // 256 is max according to PSSetShader documentation
         D3D11_PRIMITIVE_TOPOLOGY    PrimitiveTopology;
-        ID3D11Buffer*               IndexBuffer, *VertexBuffer, *VSConstantBuffer;
+        ID3D11Buffer*               IndexBuffer, *VertexBuffer, *VSConstantBuffer, *PSConstantBuffer1;
         UINT                        IndexBufferOffset, VertexBufferStride, VertexBufferOffset;
         DXGI_FORMAT                 IndexBufferFormat;
         ID3D11InputLayout*          InputLayout;
@@ -251,12 +270,14 @@ void ImGui_ImplDX11_RenderDrawData(ImDrawData* draw_data)
     device->RSGetState(&old.RS);
     device->OMGetBlendState(&old.BlendState, old.BlendFactor, &old.SampleMask);
     device->OMGetDepthStencilState(&old.DepthStencilState, &old.StencilRef);
-    device->PSGetShaderResources(0, 1, &old.PSShaderResource);
+    device->PSGetShaderResources(0, 1, &old.PSShaderResource[0]);
+    device->PSGetShaderResources(1, 1, &old.PSShaderResource[1]);
     device->PSGetSamplers(0, 1, &old.PSSampler);
     old.PSInstancesCount = old.VSInstancesCount = old.GSInstancesCount = 256;
     device->PSGetShader(&old.PS, old.PSInstances, &old.PSInstancesCount);
     device->VSGetShader(&old.VS, old.VSInstances, &old.VSInstancesCount);
     device->VSGetConstantBuffers(0, 1, &old.VSConstantBuffer);
+    device->PSGetConstantBuffers(1, 1, &old.PSConstantBuffer1);
     device->GSGetShader(&old.GS, old.GSInstances, &old.GSInstancesCount);
 
     device->IAGetPrimitiveTopology(&old.PrimitiveTopology);
@@ -275,6 +296,8 @@ void ImGui_ImplDX11_RenderDrawData(ImDrawData* draw_data)
     render_state.SamplerDefault = bd->pTexSamplerLinear;
     render_state.VertexConstantBuffer = bd->pVertexConstantBuffer;
     platform_io.Renderer_RenderState = &render_state;
+
+    D3D11_MAPPED_SUBRESOURCE mapped_resource;
 
     // Render command lists
     // (Because we merged all buffers into a single one, we maintain our own offset into them)
@@ -308,9 +331,29 @@ void ImGui_ImplDX11_RenderDrawData(ImDrawData* draw_data)
                 const D3D11_RECT r = { (LONG)clip_min.x, (LONG)clip_min.y, (LONG)clip_max.x, (LONG)clip_max.y };
                 device->RSSetScissorRects(1, &r);
 
-                // Bind texture, Draw
-                ID3D11ShaderResourceView* texture_srv = (ID3D11ShaderResourceView*)pcmd->GetTexID();
-                device->PSSetShaderResources(0, 1, &texture_srv);
+                PIXEL_CONSTANT_BUFFER_DX11 pixel_constants = {};
+                ID3D11ShaderResourceView* base_srv = (ID3D11ShaderResourceView*)pcmd->GetTexID();
+                ID3D11ShaderResourceView* emissive_srv = base_srv;
+
+                if (ImTextureIdHasEmissive(pcmd->GetTexID()))
+                {
+                    const HvkEmissiveBinding* binding = (const HvkEmissiveBinding*)pcmd->GetTexID();
+                    base_srv = (ID3D11ShaderResourceView*)binding->BaseTexture;
+                    emissive_srv = binding->EmissiveTexture ? (ID3D11ShaderResourceView*)binding->EmissiveTexture : base_srv;
+                    pixel_constants.emissiveStrength = binding->EmissiveStrength;
+                    pixel_constants.additiveBlend = binding->Additive ? 1.0f : 0.0f;
+                }
+
+                if (device->Map(bd->pPixelConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_resource) == S_OK)
+                {
+                    PIXEL_CONSTANT_BUFFER_DX11* mapped = (PIXEL_CONSTANT_BUFFER_DX11*)mapped_resource.pData;
+                    *mapped = pixel_constants;
+                    device->Unmap(bd->pPixelConstantBuffer, 0);
+                }
+
+                device->PSSetConstantBuffers(1, 1, &bd->pPixelConstantBuffer);
+                device->PSSetShaderResources(0, 1, &base_srv);
+                device->PSSetShaderResources(1, 1, &emissive_srv);
                 device->DrawIndexed(pcmd->ElemCount, pcmd->IdxOffset + global_idx_offset, pcmd->VtxOffset + global_vtx_offset);
             }
         }
@@ -325,12 +368,14 @@ void ImGui_ImplDX11_RenderDrawData(ImDrawData* draw_data)
     device->RSSetState(old.RS); if (old.RS) old.RS->Release();
     device->OMSetBlendState(old.BlendState, old.BlendFactor, old.SampleMask); if (old.BlendState) old.BlendState->Release();
     device->OMSetDepthStencilState(old.DepthStencilState, old.StencilRef); if (old.DepthStencilState) old.DepthStencilState->Release();
-    device->PSSetShaderResources(0, 1, &old.PSShaderResource); if (old.PSShaderResource) old.PSShaderResource->Release();
+    device->PSSetShaderResources(0, 1, &old.PSShaderResource[0]); if (old.PSShaderResource[0]) old.PSShaderResource[0]->Release();
+    device->PSSetShaderResources(1, 1, &old.PSShaderResource[1]); if (old.PSShaderResource[1]) old.PSShaderResource[1]->Release();
     device->PSSetSamplers(0, 1, &old.PSSampler); if (old.PSSampler) old.PSSampler->Release();
     device->PSSetShader(old.PS, old.PSInstances, old.PSInstancesCount); if (old.PS) old.PS->Release();
     for (UINT i = 0; i < old.PSInstancesCount; i++) if (old.PSInstances[i]) old.PSInstances[i]->Release();
     device->VSSetShader(old.VS, old.VSInstances, old.VSInstancesCount); if (old.VS) old.VS->Release();
     device->VSSetConstantBuffers(0, 1, &old.VSConstantBuffer); if (old.VSConstantBuffer) old.VSConstantBuffer->Release();
+    device->PSSetConstantBuffers(1, 1, &old.PSConstantBuffer1); if (old.PSConstantBuffer1) old.PSConstantBuffer1->Release();
     device->GSSetShader(old.GS, old.GSInstances, old.GSInstancesCount); if (old.GS) old.GS->Release();
     for (UINT i = 0; i < old.VSInstancesCount; i++) if (old.VSInstances[i]) old.VSInstances[i]->Release();
     device->IASetPrimitiveTopology(old.PrimitiveTopology);
@@ -494,24 +539,45 @@ bool    ImGui_ImplDX11_CreateDeviceObjects()
             desc.MiscFlags = 0;
             bd->pd3dDevice->CreateBuffer(&desc, nullptr, &bd->pVertexConstantBuffer);
         }
+
+        // Create the pixel constant buffer
+        {
+            D3D11_BUFFER_DESC desc = {};
+            desc.ByteWidth = sizeof(PIXEL_CONSTANT_BUFFER_DX11);
+            desc.Usage = D3D11_USAGE_DYNAMIC;
+            desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+            desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+            desc.MiscFlags = 0;
+            bd->pd3dDevice->CreateBuffer(&desc, nullptr, &bd->pPixelConstantBuffer);
+        }
     }
 
     // Create the pixel shader
     {
         static const char* pixelShader =
-            "struct PS_INPUT\
+            "cbuffer pixelBuffer : register(b1)\
+            {\
+            float emissiveStrength;\
+            float additiveBlend;\
+            float2 padding;\
+            };\
+            struct PS_INPUT\
             {\
             float4 pos : SV_POSITION;\
             float4 col : COLOR0;\
             float2 uv  : TEXCOORD0;\
             };\
             sampler sampler0;\
-            Texture2D texture0;\
+            Texture2D texture0 : register(t0);\
+            Texture2D texture1 : register(t1);\
             \
             float4 main(PS_INPUT input) : SV_Target\
             {\
-            float4 out_col = input.col * texture0.Sample(sampler0, input.uv); \
-            return out_col; \
+            float4 base = input.col * texture0.Sample(sampler0, input.uv); \
+            float3 emissive = texture1.Sample(sampler0, input.uv).rgb * emissiveStrength;\
+            float3 combined = base.rgb + (additiveBlend > 0.5f ? emissive : emissive * base.a);\
+            base.rgb = saturate(combined);\
+            return base; \
             }";
 
         ID3DBlob* pixelShaderBlob;
@@ -603,6 +669,7 @@ void    ImGui_ImplDX11_InvalidateDeviceObjects()
     if (bd->pDepthStencilState)     { bd->pDepthStencilState->Release(); bd->pDepthStencilState = nullptr; }
     if (bd->pRasterizerState)       { bd->pRasterizerState->Release(); bd->pRasterizerState = nullptr; }
     if (bd->pPixelShader)           { bd->pPixelShader->Release(); bd->pPixelShader = nullptr; }
+    if (bd->pPixelConstantBuffer)   { bd->pPixelConstantBuffer->Release(); bd->pPixelConstantBuffer = nullptr; }
     if (bd->pVertexConstantBuffer)  { bd->pVertexConstantBuffer->Release(); bd->pVertexConstantBuffer = nullptr; }
     if (bd->pInputLayout)           { bd->pInputLayout->Release(); bd->pInputLayout = nullptr; }
     if (bd->pVertexShader)          { bd->pVertexShader->Release(); bd->pVertexShader = nullptr; }

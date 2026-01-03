@@ -3,15 +3,45 @@
 #include "hvk_gui.h"
 #include "imgui_internal.h"
 #include "../example_win32_directx12/settings.h"
+#include "hvk_emissive.h"
 
 // Forward declarations from main.cpp
 extern AppState g_App;
 
 namespace HvkGui
 {
-	// ====================================================================
-	// TEXT RENDERING - GLOW EFFECTS
-	// ====================================================================
+        namespace
+        {
+                static ImVector<HvkEmissiveBinding> g_EmissiveBindings;
+                static int g_LastFrame = -1;
+
+                const HvkEmissiveBinding* AllocateEmissiveBinding(ImTextureID base, const EmissiveImageOptions* opts)
+                {
+                        if (!opts || opts->emissiveTexture == (ImTextureID)nullptr || opts->emissiveStrength <= 0.0f)
+                                return nullptr;
+
+                        ImGuiContext* ctx = ImGui::GetCurrentContext();
+                        const int frame = ctx ? ctx->FrameCount : 0;
+                        if (frame != g_LastFrame)
+                        {
+                                g_EmissiveBindings.clear();
+                                g_LastFrame = frame;
+                        }
+
+                        HvkEmissiveBinding binding;
+                        binding.BaseTexture = base;
+                        binding.EmissiveTexture = opts->emissiveTexture;
+                        binding.EmissiveStrength = opts->emissiveStrength;
+                        binding.Additive = opts->additiveBlend;
+
+                        g_EmissiveBindings.push_back(binding);
+                        return &g_EmissiveBindings.back();
+                }
+        }
+
+        // ====================================================================
+        // TEXT RENDERING - GLOW EFFECTS
+        // ====================================================================
 
 	void GlowText(
 		ImFont* font,
@@ -141,19 +171,20 @@ namespace HvkGui
 	// TEXTURE WIDGETS
 	// ====================================================================
 
-	bool ImageRounded(
-		ImTextureID textureId,
-		const ImVec2& size,
-		const ImVec2& uv0,
-		const ImVec2& uv1,
-		ImU32 tintColor,
-		ImU32 borderColor,
-		float rounding
-	)
-	{
-		ImGuiWindow* window = ImGui::GetCurrentWindow();
-		if (window->SkipItems)
-			return false;
+        bool ImageRounded(
+                ImTextureID textureId,
+                const ImVec2& size,
+                const ImVec2& uv0,
+                const ImVec2& uv1,
+                ImU32 tintColor,
+                ImU32 borderColor,
+                float rounding,
+                const EmissiveImageOptions* emissive
+        )
+        {
+                ImGuiWindow* window = ImGui::GetCurrentWindow();
+                if (window->SkipItems)
+                        return false;
 
 		ImGuiContext& g = *GImGui;
 		const ImGuiStyle& style = g.Style;
@@ -167,15 +198,18 @@ namespace HvkGui
 
 		ImDrawList* drawList = ImGui::GetWindowDrawList();
 
-		// For rounded images, we use path clipping
-		if (rounding > 0.0f)
-		{
-			drawList->AddImageRounded(textureId, bb.Min, bb.Max, uv0, uv1, tintColor, rounding);
-		}
-		else
-		{
-			drawList->AddImage(textureId, bb.Min, bb.Max, uv0, uv1, tintColor);
-		}
+                const HvkEmissiveBinding* binding = AllocateEmissiveBinding(textureId, emissive);
+                ImTextureID resolvedTex = binding ? (ImTextureID)binding : textureId;
+
+                // For rounded images, we use path clipping
+                if (rounding > 0.0f)
+                {
+                        drawList->AddImageRounded(resolvedTex, bb.Min, bb.Max, uv0, uv1, tintColor, rounding);
+                }
+                else
+                {
+                        drawList->AddImage(resolvedTex, bb.Min, bb.Max, uv0, uv1, tintColor);
+                }
 
 		if ((borderColor & IM_COL32_A_MASK) != 0 && borderColor != IM_COL32_BLACK_TRANS)
 		{
@@ -185,20 +219,21 @@ namespace HvkGui
 		return true;
 	}
 
-	bool ImageWithCustomBorder(
-		ImTextureID textureId,
-		ImTextureID borderTextureId,
-		const ImVec2& size,
-		float borderSize,
-		ImU32 tintColor,
-		ImU32 borderTintColor,
-		const ImVec2& uv0,
-		const ImVec2& uv1
-	)
-	{
-		ImGuiWindow* window = ImGui::GetCurrentWindow();
-		if (window->SkipItems)
-			return false;
+        bool ImageWithCustomBorder(
+                ImTextureID textureId,
+                ImTextureID borderTextureId,
+                const ImVec2& size,
+                float borderSize,
+                ImU32 tintColor,
+                ImU32 borderTintColor,
+                const ImVec2& uv0,
+                const ImVec2& uv1,
+                const EmissiveImageOptions* emissive
+        )
+        {
+                ImGuiWindow* window = ImGui::GetCurrentWindow();
+                if (window->SkipItems)
+                        return false;
 
 		ImVec2 min = window->DC.CursorPos;
 		ImVec2 max = ImVec2(min.x + size.x, min.y + size.y);
@@ -239,13 +274,16 @@ namespace HvkGui
 				ImVec2(0.67f, 0.33f), ImVec2(1, 0.67f), borderTintColor);
 		}
 
-		// Render main texture (inside border)
-		ImVec2 innerMin(bb.Min.x + borderSize, bb.Min.y + borderSize);
-		ImVec2 innerMax(bb.Max.x - borderSize, bb.Max.y - borderSize);
-		if (innerMin.x < innerMax.x && innerMin.y < innerMax.y)
-		{
-			drawList->AddImage(textureId, innerMin, innerMax, uv0, uv1, tintColor);
-		}
+                const HvkEmissiveBinding* binding = AllocateEmissiveBinding(textureId, emissive);
+                ImTextureID resolvedTex = binding ? (ImTextureID)binding : textureId;
+
+                // Render main texture (inside border)
+                ImVec2 innerMin(bb.Min.x + borderSize, bb.Min.y + borderSize);
+                ImVec2 innerMax(bb.Max.x - borderSize, bb.Max.y - borderSize);
+                if (innerMin.x < innerMax.x && innerMin.y < innerMax.y)
+                {
+                        drawList->AddImage(resolvedTex, innerMin, innerMax, uv0, uv1, tintColor);
+                }
 
 		return true;
 	}

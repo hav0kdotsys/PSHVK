@@ -30,6 +30,7 @@
 #include "util/disk.h"
 #include "util/web_helper.h"
 #include "util/theme_helper.h"
+#include "glow_pipeline.h"
 
 #include <mmsystem.h>
 #pragma comment(lib, "winmm.lib")
@@ -411,12 +412,6 @@ static std::mutex                 g_dx12UploadMutex;
 // Keep DX12 texture resources alive (your current code never releases them anyway)
 static std::vector<ID3D12Resource*> g_dx12LiveTextures;
 
-
-// ---------------- DX11 data ----------------
-static ID3D11Device* g_pd3dDevice11 = nullptr;
-static ID3D11DeviceContext* g_pd3dDeviceContext11 = nullptr;
-static IDXGISwapChain* g_pSwapChain11 = nullptr;
-static ID3D11RenderTargetView* g_mainRenderTargetView11 = nullptr;
 static bool LoadTextureUnified(const wchar_t* path, HVKTexture& outTex)
 {
         if (g_App.g_RenderBackend == RenderBackend::DX12)
@@ -432,6 +427,34 @@ static bool LoadTextureUnified(const wchar_t* path, HVKTexture& outTex)
         else
         {
                 // DX11 path
+static ID3D11Device* g_pd3dDevice11 = nullptr;
+static ID3D11DeviceContext* g_pd3dDeviceContext11 = nullptr;
+static IDXGISwapChain* g_pSwapChain11 = nullptr;
+static ID3D11RenderTargetView* g_mainRenderTargetView11 = nullptr;
+static GlowPipelineDX12 g_GlowPipeline12;
+static GlowPipelineDX11 g_GlowPipeline11;
+static GlowSettings g_GlowSettings;
+static bool LoadTextureUnified(const wchar_t* path, HVKTexture& outTex)
+{
+	if (g_App.g_RenderBackend == RenderBackend::DX12)
+	{
+		// DX12 path – wrap the old function
+		ImTextureID id = TextureLoader::LoadTexture(
+			path,
+			g_pd3dDevice,
+			g_pd3dCommandList,
+			g_pd3dSrvDescHeapAlloc
+		);
+
+		if (!id)
+			return false;
+
+		outTex.id = id;
+		return true;
+	}
+	else
+	{
+		// DX11 path
 		return TextureLoader::LoadTextureDX11FromFile(
 			g_pd3dDevice11,
 			g_pd3dDeviceContext11,
@@ -2343,14 +2366,15 @@ int main(int, char**)
 		}
 
 		// Rendering
-		ImGui::Render();
+                ImGui::Render();
 
-		if (g_App.g_RenderBackend == RenderBackend::DX12)
-		{
-			FrameContext* frameCtx = WaitForNextFrameContext();
-			TextureLoader::ProcessDeferredTextureFrees();
-			UINT backBufferIdx = g_pSwapChain->GetCurrentBackBufferIndex();
-			frameCtx->CommandAllocator->Reset();
+                if (g_App.g_RenderBackend == RenderBackend::DX12)
+                {
+                        g_GlowPipeline12.Resize(g_pd3dDevice, (int)io.DisplaySize.x, (int)io.DisplaySize.y);
+                        FrameContext* frameCtx = WaitForNextFrameContext();
+                        TextureLoader::ProcessDeferredTextureFrees();
+                        UINT backBufferIdx = g_pSwapChain->GetCurrentBackBufferIndex();
+                        frameCtx->CommandAllocator->Reset();
 
 			D3D12_RESOURCE_BARRIER barrier = {};
 			barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
@@ -2360,18 +2384,17 @@ int main(int, char**)
 			barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
 
 			g_pd3dCommandList->Reset(frameCtx->CommandAllocator, nullptr);
-			g_pd3dCommandList->ResourceBarrier(1, &barrier);
+                        g_pd3dCommandList->ResourceBarrier(1, &barrier);
 
-			const float clear_color_with_alpha[4] = { clear_color.x * clear_color.w, clear_color.y * clear_color.w, clear_color.z * clear_color.w, clear_color.w };
-			g_pd3dCommandList->ClearRenderTargetView(g_mainRenderTargetDescriptor[backBufferIdx], clear_color_with_alpha, 0, nullptr);
-			g_pd3dCommandList->OMSetRenderTargets(1, &g_mainRenderTargetDescriptor[backBufferIdx], FALSE, nullptr);
-			g_pd3dCommandList->SetDescriptorHeaps(1, &g_pd3dSrvDescHeap);
+                        const float clear_color_with_alpha[4] = { clear_color.x * clear_color.w, clear_color.y * clear_color.w, clear_color.z * clear_color.w, clear_color.w };
+                        g_pd3dCommandList->ClearRenderTargetView(g_mainRenderTargetDescriptor[backBufferIdx], clear_color_with_alpha, 0, nullptr);
+                        D3D12_VIEWPORT mainViewport{ 0.0f, 0.0f, io.DisplaySize.x, io.DisplaySize.y, 0.0f, 1.0f };
+                        D3D12_RECT scissor{ 0, 0, (LONG)io.DisplaySize.x, (LONG)io.DisplaySize.y };
+                        g_GlowPipeline12.Render(g_pd3dCommandList, ImGui::GetDrawData(), g_pd3dSrvDescHeap, g_mainRenderTargetDescriptor[backBufferIdx], mainViewport, scissor, g_GlowSettings);
 
-			ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), g_pd3dCommandList);
-
-			barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
-			barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
-			g_pd3dCommandList->ResourceBarrier(1, &barrier);
+                        barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+                        barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
+                        g_pd3dCommandList->ResourceBarrier(1, &barrier);
 			g_pd3dCommandList->Close();
 
 			g_pd3dCommandQueue->ExecuteCommandLists(1, (ID3D12CommandList* const*)&g_pd3dCommandList);
@@ -2387,16 +2410,17 @@ int main(int, char**)
 			g_SwapChainOccluded = (hr == DXGI_STATUS_OCCLUDED);
 			g_frameIndex++;
 		}
-		else
-		{
-			const float clear_color_with_alpha[4] = { clear_color.x * clear_color.w, clear_color.y * clear_color.w, clear_color.z * clear_color.w, clear_color.w };
-			g_pd3dDeviceContext11->OMSetRenderTargets(1, &g_mainRenderTargetView11, nullptr);
-			g_pd3dDeviceContext11->ClearRenderTargetView(g_mainRenderTargetView11, clear_color_with_alpha);
+                else
+                {
+                        g_GlowPipeline11.Resize(g_pd3dDevice11, (int)io.DisplaySize.x, (int)io.DisplaySize.y);
+                        const float clear_color_with_alpha[4] = { clear_color.x * clear_color.w, clear_color.y * clear_color.w, clear_color.z * clear_color.w, clear_color.w };
+                        g_pd3dDeviceContext11->OMSetRenderTargets(1, &g_mainRenderTargetView11, nullptr);
+                        g_pd3dDeviceContext11->ClearRenderTargetView(g_mainRenderTargetView11, clear_color_with_alpha);
 
-			ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+                        g_GlowPipeline11.Render(g_pd3dDeviceContext11, ImGui::GetDrawData(), g_mainRenderTargetView11, io.DisplaySize, g_GlowSettings);
 
-			g_pSwapChain11->Present(settings->vsync ? 1 : 0, 0);
-		}
+                        g_pSwapChain11->Present(settings->vsync ? 1 : 0, 0);
+                }
 
 		if (!settings->vsync)
 			g_fpsLimiter.Limit();
@@ -2494,11 +2518,12 @@ bool HVKSYS::InitDX11(HWND hwnd)
 		&g_pd3dDeviceContext11
 	);
 
-	if (FAILED(hr))
-		return false;
+        if (FAILED(hr))
+                return false;
 
-	CreateRenderTargetDX11();
-	return true;
+        CreateRenderTargetDX11();
+        g_GlowPipeline11.Initialize(g_pd3dDevice11);
+        return true;
 }
 
 
@@ -2619,11 +2644,11 @@ bool CreateDeviceD3D(HWND hWnd)
 	if (g_fenceEvent == nullptr)
 		return false;
 
-	{
-		IDXGIFactory5* dxgiFactory = nullptr;
-		IDXGISwapChain1* swapChain1 = nullptr;
-		if (CreateDXGIFactory1(IID_PPV_ARGS(&dxgiFactory)) != S_OK)
-			return false;
+        {
+                IDXGIFactory5* dxgiFactory = nullptr;
+                IDXGISwapChain1* swapChain1 = nullptr;
+                if (CreateDXGIFactory1(IID_PPV_ARGS(&dxgiFactory)) != S_OK)
+                        return false;
 
 		BOOL allow_tearing = FALSE;
 		dxgiFactory->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &allow_tearing, sizeof(allow_tearing));
@@ -2638,14 +2663,15 @@ bool CreateDeviceD3D(HWND hWnd)
 		if (g_SwapChainTearingSupport)
 			dxgiFactory->MakeWindowAssociation(hWnd, DXGI_MWA_NO_ALT_ENTER);
 
-		swapChain1->Release();
-		dxgiFactory->Release();
-		g_pSwapChain->SetMaximumFrameLatency(APP_NUM_BACK_BUFFERS);
-		g_hSwapChainWaitableObject = g_pSwapChain->GetFrameLatencyWaitableObject();
-	}
+                swapChain1->Release();
+                dxgiFactory->Release();
+                g_pSwapChain->SetMaximumFrameLatency(APP_NUM_BACK_BUFFERS);
+                g_hSwapChainWaitableObject = g_pSwapChain->GetFrameLatencyWaitableObject();
+        }
 
-	CreateRenderTarget();
-	return true;
+        g_GlowPipeline12.Initialize(g_pd3dDevice);
+        CreateRenderTarget();
+        return true;
 }
 
 void CleanupDeviceD3D()
@@ -2766,23 +2792,25 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			if (g_pd3dDevice != nullptr)
 			{
 				CleanupRenderTarget();
-				DXGI_SWAP_CHAIN_DESC1 desc = {};
-				g_pSwapChain->GetDesc1(&desc);
-				HRESULT result = g_pSwapChain->ResizeBuffers(0, (UINT)LOWORD(lParam), (UINT)HIWORD(lParam), desc.Format, desc.Flags);
-				IM_ASSERT(SUCCEEDED(result) && "Failed to resize DX12 swapchain.");
-				CreateRenderTarget();
-			}
-		}
-		else
-		{
-			if (g_pSwapChain11 != nullptr)
-			{
-				HVKSYS::CleanupRenderTargetDX11();
-				g_pSwapChain11->ResizeBuffers(0, (UINT)LOWORD(lParam), (UINT)HIWORD(lParam), DXGI_FORMAT_UNKNOWN, 0);
-				HVKSYS::CreateRenderTargetDX11();
-			}
-		}
-		return 0;
+                                DXGI_SWAP_CHAIN_DESC1 desc = {};
+                                g_pSwapChain->GetDesc1(&desc);
+                                HRESULT result = g_pSwapChain->ResizeBuffers(0, (UINT)LOWORD(lParam), (UINT)HIWORD(lParam), desc.Format, desc.Flags);
+                                IM_ASSERT(SUCCEEDED(result) && "Failed to resize DX12 swapchain.");
+                                CreateRenderTarget();
+                                g_GlowPipeline12.Resize(g_pd3dDevice, (int)LOWORD(lParam), (int)HIWORD(lParam));
+                        }
+                }
+                else
+                {
+                        if (g_pSwapChain11 != nullptr)
+                        {
+                                HVKSYS::CleanupRenderTargetDX11();
+                                g_pSwapChain11->ResizeBuffers(0, (UINT)LOWORD(lParam), (UINT)HIWORD(lParam), DXGI_FORMAT_UNKNOWN, 0);
+                                HVKSYS::CreateRenderTargetDX11();
+                                g_GlowPipeline11.Resize(g_pd3dDevice11, (int)LOWORD(lParam), (int)HIWORD(lParam));
+                        }
+                }
+                return 0;
 
 	case WM_SYSCOMMAND:
 		if ((wParam & 0xfff0) == SC_KEYMENU) // Disable ALT application menu

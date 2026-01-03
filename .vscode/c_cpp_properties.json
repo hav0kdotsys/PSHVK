@@ -1,0 +1,161 @@
+{
+    "configurations": [
+        {
+            "name": "Win32",
+            "includePath": [
+                "${workspaceFolder}/imgui",
+                "${workspaceFolder}/imgui/backends",
+                "${workspaceFolder}/example_win32_directx12",
+                "${workspaceFolder}/example_win32_directx12/util",
+                "${workspaceFolder}/libs/curl/x64",
+                "${workspaceFolder}/libs/json/include/nlohmann",
+                "${workspaceFolder}/libs/D3D12/DirectX-Headers/include/directx",
+                "${workspaceFolder}/libs/emscripten",
+                "${workspaceFolder}/libs/glfw/include",
+                "${vcpkgRoot}/x64-windows/include",
+                "${workspaceFolder}",
+                "${env:WindowsSdkDir}Include/${env:WindowsSDKVersion}/um",
+                "${env:WindowsSdkDir}Include/${env:WindowsSDKVersion}/shared",
+                "${env:WindowsSdkDir}Include/${env:WindowsSDKVersion}/ucrt",
+                "${env:ProgramFiles}/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.*/include"
+            ],
+            "defines": [
+                "_DEBUG",
+                "_CONSOLE",
+                "WIN32"
+            ],
+            "windowsSdkVersion": "10.0.26100.0",
+            "compilerPath": "d:\\Program Files\\Microsoft Visual Studio\\18\\Insiders\\VC\\Tools\\MSVC\\14.50.35717\\bin\\Hostx64\\x64\\cl.exe",
+            "cStandard": "c17",
+            "cppStandard": "c++20",
+            "browse": {
+                "path": [
+                    "${workspaceFolder}",
+                    "${vcpkgRoot}/x64-windows/include"
+                ],
+                "limitSymbolsToIncludedHeaders": true,
+                "databaseFilename": "${workspaceFolder}/.vscode/.browse.VC.db"
+            }
+        },
+        {
+            "name": "x64-Debug",
+            "includePath": [
+                "${workspaceFolder}/imgui",
+                "${workspaceFolder}/imgui/backends",
+                "${workspaceFolder}/example_win32_directx12",
+                "${workspaceFolder}/example_win32_directx12/util",
+                "${workspaceFolder}/libs/curl/x64",
+                "${workspaceFolder}/libs/json/include/nlohmann",
+                "${workspaceFolder}/libs/D3D12/DirectX-Headers/include/directx",
+                "${workspaceFolder}/libs/emscripten",
+                "${workspaceFolder}/libs/glfw/include",
+                "${vcpkgRoot}/installed/x64-windows/include",
+                "${workspaceFolder}",
+                "${env:WindowsSdkDir}Include/${env:WindowsSDKVersion}/um",
+                "${env:WindowsSdkDir}Include/${env:WindowsSDKVersion}/shared",
+                "${env:WindowsSdkDir}Include/${env:WindowsSDKVersion}/ucrt",
+                "${env:ProgramFiles}/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.*/include"
+            ],
+            "defines": [
+                "_DEBUG",
+                "_CONSOLE"
+            ],
+            "windowsSdkVersion": "10.0.26100.0",
+            "compilerPath": "cl.exe",
+            "cStandard": "c17",
+            "cppStandard": "c++20",
+            "browse": {
+                "path": [
+                    "${workspaceFolder}",
+                    "${vcpkgRoot}/installed/x64-windows/include",
+                    "${env:WindowsSdkDir}Include/${env:WindowsSDKVersion}/um",
+                    "${env:WindowsSdkDir}Include/${env:WindowsSDKVersion}/shared",
+                    "${env:ProgramFiles}/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.*/include"
+                ],
+                "limitSymbolsToIncludedHeaders": true,
+                "databaseFilename": "${workspaceFolder}/.vscode/.browse.VC.db"
+            }
+        },
+        {
+            "name": "x64-Release",
+            "includePath": [
+                "${workspaceFolder}/imgui",
+                "${workspaceFolder}/imgui/backends",
+                "${workspaceFolder}/example_win32_directx12",
+                "${workspaceFolder}/",
+                "${env:WindowsSdkDir}Include/${env:WindowsSDKVersion}/um",
+                "${env:WindowsSdkDir}Include/${env:WindowsSDKVersion}/shared",
+                "${env:WindowsSdkDir}Include/${env:WindowsSDKVersion}/ucrt",
+                "${env:ProgramFiles}/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.",
+                "D:/Program Files/Microsoft Visual Studio/18/Insiders/VC/Tools/MSVC/14.50.35717/include",
+                "D:/Program Files/Microsoft Visual Studio/18/Insiders/VC/Tools/MSVC/14.50.35717/atlmfc/include",
+                "D:/Program Files/Microsoft Visual Studio/18/Insiders/VC/Auxiliary/VS/include",
+                "C:/Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/ucrt",
+                "${workspaceFolder}/libs/curl/x64",
+                "${workspaceFolder}/libs/json/include/nlohmann",
+                "${workspaceFolder}/libs/D3D12/DirectX-Headers/include/directx",
+                "${workspaceFolder}/libs/emscripten",
+                "${workspaceFolder}/libs/glfw/include",
+                "${vcpkgRoot}/installed/x64-windows/include",
+                "${workspaceFolder}"
+            ],
+            "defines": [
+                "NDEBUG",
+                "_CONSOLE"
+            ],
+            "windowsSdkVersion": "10.0.26100.0",
+            "compilerPath": "cl.exe",
+            "cStandard": "c17",
+            "cppStandard": "c++20",
+            "browse": {
+                "path": [
+                    "${workspaceFolder}",
+                    "${vcpkgRoot}/installed/x64-windows/include"
+                ],
+                "limitSymbolsToIncludedHeaders": true,
+                "databaseFilename": "${workspaceFolder}/.vscode/.browse.VC.db"
+            }
+        },
+        {
+            "name": "x64-Dev",
+            "includePath": [
+                "${workspaceFolder}/imgui",
+                "${workspaceFolder}/imgui/backends",
+                "${workspaceFolder}/example_win32_directx12",
+                "${workspaceFolder}/example_win32_directx12/util",
+                "${workspaceFolder}/libs/curl/x64",
+                "${workspaceFolder}/libs/json/include/nlohmann",
+                "${workspaceFolder}/libs/D3D12/DirectX-Headers/include/directx",
+                "${workspaceFolder}/libs/emscripten",
+                "${workspaceFolder}/libs/glfw/include",
+                "${vcpkgRoot}/installed/x64-windows/include",
+                "${workspaceFolder}",
+                "${env:WindowsSdkDir}Include/${env:WindowsSDKVersion}/um",
+                "${env:WindowsSdkDir}Include/${env:WindowsSDKVersion}/shared",
+                "${env:WindowsSdkDir}Include/${env:WindowsSDKVersion}/ucrt",
+                "${env:ProgramFiles}/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.*/include"
+            ],
+            "defines": [
+                "NDEBUG",
+                "_DEV",
+                "_CONSOLE"
+            ],
+            "windowsSdkVersion": "10.0.26100.0",
+            "compilerPath": "cl.exe",
+            "cStandard": "c17",
+            "cppStandard": "c++20",
+            "browse": {
+                "path": [
+                    "${workspaceFolder}",
+                    "${vcpkgRoot}/installed/x64-windows/include",
+                    "${env:WindowsSdkDir}Include/${env:WindowsSDKVersion}/um",
+                    "${env:WindowsSdkDir}Include/${env:WindowsSDKVersion}/shared",
+                    "${env:ProgramFiles}/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.*/include"
+                ],
+                "limitSymbolsToIncludedHeaders": true,
+                "databaseFilename": "${workspaceFolder}/.vscode/.browse.VC.db"
+            }
+        }
+    ],
+    "version": 4
+}
