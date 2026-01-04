@@ -64,9 +64,69 @@ Testing/
 Thumbs.db
 .vscode/.BROWSE.VC.DB
 .vscode/.BROWSE.VC.DB
+obj/x64/Release/x64/Menu Base.tlog/*.tlog
+obj/x64/Dev/Menu Base.tlog/*.tlog
+obj/x64/Dev/custom_widgets.obj
+obj/x64/Dev/disk.obj
+obj/x64/Dev/hvk_gui.obj
+obj/x64/Dev/imgui_demo.obj
+obj/x64/Dev/imgui_draw.obj
+obj/x64/Dev/imgui_impl_dx11.obj
+obj/x64/Dev/imgui_impl_dx12.obj
+obj/x64/Dev/imgui_impl_win32.obj
+obj/x64/Dev/imgui_tables.obj
+obj/x64/Dev/imgui_widgets.obj
+obj/x64/Dev/imgui.obj
+obj/x64/Dev/settings.obj
+obj/x64/Dev/system.obj
 obj/x64/Dev/main.obj
 obj/x64/Dev/texhelper.obj
 obj/x64/Dev/vc145.pdb
 obj/x64/Dev/Menu Base.tlog/CL.command.1.tlog
 obj/x64/Dev/Menu Base.tlog/CL.read.1.tlog
 obj/x64/Dev/Menu Base.tlog/CL.write.1.tlog
+bin/x64/Release/PSHVK.exe
+bin/x64/Release/PSHVK.pdb
+bin/x64/Dev/PSHVK_Dev.pdb
+obj/x64/Dev/main.obj
+obj/x64/Dev/PSHVK_Dev.iobj
+obj/x64/Dev/PSHVK_Dev.ipdb
+obj/x64/Dev/vc145.pdb
+obj/x64/Dev/Menu Base.tlog/CL.command.1.tlog
+obj/x64/Dev/Menu Base.tlog/Cl.items.tlog
+obj/x64/Dev/Menu Base.tlog/CL.read.1.tlog
+obj/x64/Dev/Menu Base.tlog/CL.write.1.tlog
+obj/x64/Dev/Menu Base.tlog/link.command.1.tlog
+obj/x64/Dev/Menu Base.tlog/link.read.1.tlog
+obj/x64/Dev/Menu Base.tlog/link.secondary.1.tlog
+obj/x64/Dev/Menu Base.tlog/link.write.1.tlog
+obj/x64/Dev/Menu Base.tlog/Menu Base.write.1u.tlog
+obj/x64/Release/x64/custom_widgets.obj
+obj/x64/Release/x64/disk.obj
+obj/x64/Release/x64/hvk_gui.obj
+obj/x64/Release/x64/imgui_demo.obj
+obj/x64/Release/x64/imgui_draw.obj
+obj/x64/Release/x64/imgui_impl_dx11.obj
+obj/x64/Release/x64/imgui_impl_dx12.obj
+obj/x64/Release/x64/imgui_impl_win32.obj
+obj/x64/Release/x64/imgui_tables.obj
+obj/x64/Release/x64/imgui_widgets.obj
+obj/x64/Release/x64/imgui.obj
+obj/x64/Release/x64/main.obj
+obj/x64/Release/x64/PSHVK.iobj
+obj/x64/Release/x64/PSHVK.ipdb
+obj/x64/Release/x64/settings.obj
+obj/x64/Release/x64/system.obj
+obj/x64/Release/x64/texhelper.obj
+obj/x64/Release/x64/theme_helper.obj
+obj/x64/Release/x64/vc145.pdb
+obj/x64/Release/x64/web_helper.obj
+obj/x64/Release/x64/Menu Base.tlog/CL.command.1.tlog
+obj/x64/Release/x64/Menu Base.tlog/Cl.items.tlog
+obj/x64/Release/x64/Menu Base.tlog/CL.read.1.tlog
+obj/x64/Release/x64/Menu Base.tlog/CL.write.1.tlog
+obj/x64/Release/x64/Menu Base.tlog/link.command.1.tlog
+obj/x64/Release/x64/Menu Base.tlog/link.read.1.tlog
+obj/x64/Release/x64/Menu Base.tlog/link.secondary.1.tlog
+obj/x64/Release/x64/Menu Base.tlog/link.write.1.tlog
+obj/x64/Release/x64/Menu Base.tlog/Menu Base.write.1u.tlog

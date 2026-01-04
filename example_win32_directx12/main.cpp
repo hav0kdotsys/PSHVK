@@ -391,7 +391,7 @@ static UINT                         g_frameIndex = 0;
 static ID3D12Device* g_pd3dDevice = nullptr;
 static ID3D12DescriptorHeap* g_pd3dRtvDescHeap = nullptr;
 static ID3D12DescriptorHeap* g_pd3dSrvDescHeap = nullptr;
-static ExampleDescriptorHeapAllocator g_pd3dSrvDescHeapAlloc;
+ExampleDescriptorHeapAllocator g_pd3dSrvDescHeapAlloc;
 static ID3D12CommandQueue* g_pd3dCommandQueue = nullptr;
 static ID3D12GraphicsCommandList* g_pd3dCommandList = nullptr;
 static ID3D12Fence* g_fence = nullptr;
