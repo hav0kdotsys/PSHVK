@@ -62,3 +62,4 @@ Testing/
 # OS-specific files
 .DS_Store
 Thumbs.db
+.vscode/.BROWSE.VC.DB
