@@ -3,12 +3,11 @@
 #include "descriptor_alloc.h"
 #include <string>
 
-
 #pragma comment(lib, "ole32.lib")
 
 extern ExampleDescriptorHeapAllocator g_pd3dSrvDescHeapAlloc;
 
-void TextureLoader::FreeTexture(HVKTexture& tex, AppState& g_App)
+void TextureLoader::FreeTexture(HVKTexture &tex, AppState &g_App)
 {
     if (!tex.id && !tex.emissiveId)
         return;
@@ -44,8 +43,7 @@ void TextureLoader::FreeTexture(HVKTexture& tex, AppState& g_App)
     tex = {};
 }
 
-
-static std::wstring BuildEmissivePath(const std::wstring& basePath)
+static std::wstring BuildEmissivePath(const std::wstring &basePath)
 {
     const size_t dot = basePath.find_last_of(L'.');
     if (dot == std::wstring::npos)
@@ -55,21 +53,21 @@ static std::wstring BuildEmissivePath(const std::wstring& basePath)
 }
 
 static bool CreateSrvFromFile(
-    ID3D11Device* device,
-    const wchar_t* filename,
-    ID3D11ShaderResourceView** outSrv,
-    int* outWidth,
-    int* outHeight)
+    ID3D11Device *device,
+    const wchar_t *filename,
+    ID3D11ShaderResourceView **outSrv,
+    int *outWidth,
+    int *outHeight)
 {
     if (outSrv)
         *outSrv = nullptr;
 
-    IWICImagingFactory* factory = nullptr;
-    IWICBitmapDecoder* decoder = nullptr;
-    IWICBitmapFrameDecode* frame = nullptr;
-    IWICFormatConverter* converter = nullptr;
+    IWICImagingFactory *factory = nullptr;
+    IWICBitmapDecoder *decoder = nullptr;
+    IWICBitmapFrameDecode *frame = nullptr;
+    IWICFormatConverter *converter = nullptr;
 
-    ID3D11Texture2D* texture = nullptr;
+    ID3D11Texture2D *texture = nullptr;
     D3D11_TEXTURE2D_DESC desc{};
     UINT width = 0, height = 0;
     std::vector<uint8_t> pixels;
@@ -151,20 +149,25 @@ static bool CreateSrvFromFile(
         *outHeight = (int)height;
 
 cleanup:
-    if (texture) texture->Release();
-    if (converter) converter->Release();
-    if (frame) frame->Release();
-    if (decoder) decoder->Release();
-    if (factory) factory->Release();
+    if (texture)
+        texture->Release();
+    if (converter)
+        converter->Release();
+    if (frame)
+        frame->Release();
+    if (decoder)
+        decoder->Release();
+    if (factory)
+        factory->Release();
 
     return *outSrv != nullptr;
 }
 
 bool TextureLoader::LoadTextureDX11FromFile(
-    ID3D11Device* device,
-    ID3D11DeviceContext*,
-    const wchar_t* filename,
-    HVKTexture& outTex)
+    ID3D11Device *device,
+    ID3D11DeviceContext *,
+    const wchar_t *filename,
+    HVKTexture &outTex)
 {
     outTex = {};
 
@@ -182,15 +185,12 @@ bool TextureLoader::LoadTextureDX11FromFile(
     return true;
 }
 
-
-
-
 bool TextureLoader::LoadTexture(
-    const wchar_t* filePath,
-    ID3D12Device* device,
-    ID3D12GraphicsCommandList* cmdList,
-    ExampleDescriptorHeapAllocator& alloc,
-    HVKTexture& outTex)
+    const wchar_t *filePath,
+    ID3D12Device *device,
+    ID3D12GraphicsCommandList *cmdList,
+    ExampleDescriptorHeapAllocator &alloc,
+    HVKTexture &outTex)
 {
     outTex = {};
 
@@ -198,36 +198,48 @@ bool TextureLoader::LoadTexture(
     if (FAILED(hr))
         return false;
 
-    HRESULT hr;
-    IWICImagingFactory* factory = nullptr;
-    hr = CoCreateInstance(
+    HRESULT hresult;
+    IWICImagingFactory *factory = nullptr;
+    hresult = CoCreateInstance(
         CLSID_WICImagingFactory,
         nullptr,
         CLSCTX_INPROC_SERVER,
-        IID_PPV_ARGS(&factory)
-    );
-    if (FAILED(hr))
+        IID_PPV_ARGS(&factory));
+    if (FAILED(hresult))
         return false;
 
-    auto loadSingle = [&](const wchar_t* path,
-        D3D12_CPU_DESCRIPTOR_HANDLE& cpu,
-        D3D12_GPU_DESCRIPTOR_HANDLE& gpu,
-        ID3D12Resource*& texture,
-        ID3D12Resource*& uploadStorage,
-        int& texWidth,
-        int& texHeight) -> bool
+    auto loadSingle = [&](const wchar_t *path,
+                          D3D12_CPU_DESCRIPTOR_HANDLE &cpu,
+                          D3D12_GPU_DESCRIPTOR_HANDLE &gpu,
+                          ID3D12Resource *&texture,
+                          ID3D12Resource *&uploadStorage,
+                          int &texWidth,
+                          int &texHeight) -> bool
     {
-        IWICBitmapDecoder* decoder = nullptr;
-        IWICBitmapFrameDecode* frame = nullptr;
-        IWICFormatConverter* converter = nullptr;
+        IWICBitmapDecoder *decoder = nullptr;
+        IWICBitmapFrameDecode *frame = nullptr;
+        IWICFormatConverter *converter = nullptr;
 
         HRESULT localHr = factory->CreateDecoderFromFilename(
             path,
             nullptr,
             GENERIC_READ,
             WICDecodeMetadataCacheOnLoad,
-            &decoder
-        );
+            &decoder);
+
+        UINT width = 0, height = 0;
+        UINT stride = width * 4;
+        UINT size = stride * height;
+        std::vector<BYTE> pixels;
+        D3D12_RESOURCE_DESC texDesc = {};
+        auto heapDefault = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+        UINT64 uploadSize = (UINT64)nullptr;
+        auto heapUpload = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+        auto bufferDesc = CD3DX12_RESOURCE_DESC::Buffer((UINT64)nullptr);
+        ID3D12Resource *uploadBuffer = nullptr;
+        D3D12_SUBRESOURCE_DATA subData = {};
+        auto barrier = CD3DX12_RESOURCE_BARRIER();
+        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
 
         if (FAILED(localHr))
             goto cleanup;
@@ -246,26 +258,24 @@ bool TextureLoader::LoadTexture(
             WICBitmapDitherTypeNone,
             nullptr,
             0.0,
-            WICBitmapPaletteTypeCustom
-        );
+            WICBitmapPaletteTypeCustom);
 
         if (FAILED(localHr))
             goto cleanup;
 
-        UINT width = 0, height = 0;
+        width = 0, height = 0;
         converter->GetSize(&width, &height);
 
-        const UINT stride = width * 4;
-        const UINT size = stride * height;
+        stride = width * 4;
+        size = stride * height;
 
-        std::vector<BYTE> pixels;
+        pixels;
         pixels.resize(size);
 
         localHr = converter->CopyPixels(nullptr, stride, size, pixels.data());
         if (FAILED(localHr))
             goto cleanup;
 
-        D3D12_RESOURCE_DESC texDesc = {};
         texDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
         texDesc.Width = width;
         texDesc.Height = height;
@@ -275,24 +285,22 @@ bool TextureLoader::LoadTexture(
         texDesc.SampleDesc.Count = 1;
         texDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
 
-        auto heapDefault = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+        heapDefault = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
         localHr = device->CreateCommittedResource(
             &heapDefault,
             D3D12_HEAP_FLAG_NONE,
             &texDesc,
             D3D12_RESOURCE_STATE_COPY_DEST,
             nullptr,
-            IID_PPV_ARGS(&texture)
-        );
+            IID_PPV_ARGS(&texture));
 
         if (FAILED(localHr) || !texture)
             goto cleanup;
 
-        UINT64 uploadSize = GetRequiredIntermediateSize(texture, 0, 1);
+        uploadSize = GetRequiredIntermediateSize(texture, 0, 1);
 
-        ID3D12Resource* uploadBuffer = nullptr;
-        auto heapUpload = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-        auto bufferDesc = CD3DX12_RESOURCE_DESC::Buffer(uploadSize);
+        heapUpload = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+        bufferDesc = CD3DX12_RESOURCE_DESC::Buffer(uploadSize);
 
         localHr = device->CreateCommittedResource(
             &heapUpload,
@@ -300,29 +308,26 @@ bool TextureLoader::LoadTexture(
             &bufferDesc,
             D3D12_RESOURCE_STATE_GENERIC_READ,
             nullptr,
-            IID_PPV_ARGS(&uploadBuffer)
-        );
+            IID_PPV_ARGS(&uploadBuffer));
 
         if (FAILED(localHr) || !uploadBuffer)
             goto cleanup;
 
-        D3D12_SUBRESOURCE_DATA subData = {};
+
         subData.pData = pixels.data();
         subData.RowPitch = stride;
         subData.SlicePitch = size;
 
         UpdateSubresources(cmdList, texture, uploadBuffer, 0, 0, 1, &subData);
 
-        auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
+        barrier = CD3DX12_RESOURCE_BARRIER::Transition(
             texture,
             D3D12_RESOURCE_STATE_COPY_DEST,
-            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
-        );
+            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
         cmdList->ResourceBarrier(1, &barrier);
 
         alloc.Alloc(&cpu, &gpu);
 
-        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
         srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
         srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
         srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
@@ -345,9 +350,12 @@ bool TextureLoader::LoadTexture(
                 texture = nullptr;
             }
         }
-        if (converter) converter->Release();
-        if (frame) frame->Release();
-        if (decoder) decoder->Release();
+        if (converter)
+            converter->Release();
+        if (frame)
+            frame->Release();
+        if (decoder)
+            decoder->Release();
 
         return texture != nullptr;
     };
@@ -377,19 +385,18 @@ bool TextureLoader::LoadTexture(
     return true;
 }
 
-
 // Pass the *loaded textures*, not file paths.
 // Example: std::vector<ImTextureID> frames;
 
 ImTextureID TextureLoader::CycleFrames(
-    const std::vector<HVKTexture>& frames,
+    const std::vector<HVKTexture> &frames,
     int startFrameIdx,
     int endFrameIdx)
 {
     static int currentFrame = -1;
 
     if (frames.empty())
-        return (ImTextureID)nullptr;
+        return (ImTextureID) nullptr;
 
     if (currentFrame < startFrameIdx || currentFrame > endFrameIdx)
         currentFrame = startFrameIdx;
@@ -400,9 +407,7 @@ ImTextureID TextureLoader::CycleFrames(
         currentFrame = startFrameIdx;
 
     if (currentFrame < 0 || currentFrame >= (int)frames.size())
-        return (ImTextureID)nullptr;
+        return (ImTextureID) nullptr;
 
     return frames[currentFrame].id;
 }
-
-

@@ -231,6 +231,7 @@
     <ClCompile Include="example_win32_directx12\util\texhelper.cpp" />
     <ClCompile Include="example_win32_directx12\util\theme_helper.cpp" />
     <ClCompile Include="example_win32_directx12\util\web_helper.cpp" />
+    <ClCompile Include="example_win32_directx12\glow_pipeline.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="example_win32_directx12\util\disk.h" />
@@ -250,6 +251,7 @@
     <ClInclude Include="example_win32_directx12\util\system.h" />
     <ClInclude Include="example_win32_directx12\util\texhelper.h" />
     <ClInclude Include="example_win32_directx12\util\web_helper.h" />
+    <ClCompile Include="example_win32_directx12\glow_pipeline.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
