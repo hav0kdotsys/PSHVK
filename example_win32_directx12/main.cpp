@@ -35,6 +35,9 @@
 #include <mmsystem.h>
 #pragma comment(lib, "winmm.lib")
 
+#include <cstdarg>
+#include <cstdio>
+
 #ifdef _DEBUG
 #define DX12_ENABLE_DEBUG_LAYER
 #endif
@@ -48,9 +51,26 @@
 #include <atomic>
 #include <mutex>
 
+#ifdef _DEBUG
+static void DebugLog(const char* fmt, ...)
+{
+        char buffer[1024];
+        va_list args;
+        va_start(args, fmt);
+        vsnprintf(buffer, sizeof(buffer), fmt, args);
+        va_end(args);
+
+        OutputDebugStringA(buffer);
+        OutputDebugStringA("\n");
+        printf("%s\n", buffer);
+}
+#else
+#define DebugLog(...) (void)0
+#endif
+
 struct PendingFrame
 {
-	std::vector<unsigned char> bytes;
+        std::vector<unsigned char> bytes;
 };
 
 static std::mutex g_texMutex;
@@ -200,16 +220,21 @@ struct ExampleDescriptorHeapAllocator
 // Returns true on success, with the SRV CPU handle having an SRV for the newly-created texture placed in it (srv_cpu_handle must be a handle in a valid descriptor heap)
 bool LoadTextureFromMemory(const void* data, size_t data_size, ID3D12Device* d3d_device, D3D12_CPU_DESCRIPTOR_HANDLE srv_cpu_handle, ID3D12Resource** out_tex_resource, int* out_width, int* out_height)
 {
-	// Load from disk into a raw RGBA buffer
-	int image_width = 0;
-	int image_height = 0;
-	unsigned char* image_data = stbi_load_from_memory((const unsigned char*)data, (int)data_size, &image_width, &image_height, NULL, 4);
-	if (image_data == NULL)
-		return false;
+        DebugLog("LoadTextureFromMemory: start (data_size=%zu)", data_size);
+        // Load from disk into a raw RGBA buffer
+        int image_width = 0;
+        int image_height = 0;
+        unsigned char* image_data = stbi_load_from_memory((const unsigned char*)data, (int)data_size, &image_width, &image_height, NULL, 4);
+        if (image_data == NULL)
+        {
+                DebugLog("LoadTextureFromMemory: stbi_load_from_memory failed");
+                return false;
+        }
 
-	// Create texture resource
-	D3D12_HEAP_PROPERTIES props;
-	memset(&props, 0, sizeof(D3D12_HEAP_PROPERTIES));
+        DebugLog("LoadTextureFromMemory: loaded image %dx%d", image_width, image_height);
+        // Create texture resource
+        D3D12_HEAP_PROPERTIES props;
+        memset(&props, 0, sizeof(D3D12_HEAP_PROPERTIES));
 	props.Type = D3D12_HEAP_TYPE_DEFAULT;
 	props.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
 	props.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
@@ -228,16 +253,17 @@ bool LoadTextureFromMemory(const void* data, size_t data_size, ID3D12Device* d3d
 	desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
 	desc.Flags = D3D12_RESOURCE_FLAG_NONE;
 
-	ID3D12Resource* pTexture = NULL;
-	d3d_device->CreateCommittedResource(&props, D3D12_HEAP_FLAG_NONE, &desc,
-		D3D12_RESOURCE_STATE_COPY_DEST, NULL, IID_PPV_ARGS(&pTexture));
+        ID3D12Resource* pTexture = NULL;
+        d3d_device->CreateCommittedResource(&props, D3D12_HEAP_FLAG_NONE, &desc,
+                D3D12_RESOURCE_STATE_COPY_DEST, NULL, IID_PPV_ARGS(&pTexture));
 
-	// Create a temporary upload resource to move the data in
-	UINT uploadPitch = (image_width * 4 + D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1u) & ~(D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1u);
-	UINT uploadSize = image_height * uploadPitch;
-	desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-	desc.Alignment = 0;
-	desc.Width = uploadSize;
+        // Create a temporary upload resource to move the data in
+        UINT uploadPitch = (image_width * 4 + D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1u) & ~(D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1u);
+        UINT uploadSize = image_height * uploadPitch;
+        DebugLog("LoadTextureFromMemory: created texture resource and upload buffer (pitch=%u size=%u)", uploadPitch, uploadSize);
+        desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+        desc.Alignment = 0;
+        desc.Width = uploadSize;
 	desc.Height = 1;
 	desc.DepthOrArraySize = 1;
 	desc.MipLevels = 1;
@@ -257,17 +283,19 @@ bool LoadTextureFromMemory(const void* data, size_t data_size, ID3D12Device* d3d
 	IM_ASSERT(SUCCEEDED(hr));
 
 	// Write pixels into the upload resource
-	void* mapped = NULL;
-	D3D12_RANGE range = { 0, uploadSize };
-	hr = uploadBuffer->Map(0, &range, &mapped);
-	IM_ASSERT(SUCCEEDED(hr));
-	for (int y = 0; y < image_height; y++)
-		memcpy((void*)((uintptr_t)mapped + y * uploadPitch), image_data + y * image_width * 4, image_width * 4);
-	uploadBuffer->Unmap(0, &range);
+        void* mapped = NULL;
+        D3D12_RANGE range = { 0, uploadSize };
+        hr = uploadBuffer->Map(0, &range, &mapped);
+        IM_ASSERT(SUCCEEDED(hr));
+        for (int y = 0; y < image_height; y++)
+                memcpy((void*)((uintptr_t)mapped + y * uploadPitch), image_data + y * image_width * 4, image_width * 4);
+        uploadBuffer->Unmap(0, &range);
 
-	// Copy the upload resource content into the real resource
-	D3D12_TEXTURE_COPY_LOCATION srcLocation = {};
-	srcLocation.pResource = uploadBuffer;
+        DebugLog("LoadTextureFromMemory: copied image data to upload buffer");
+
+        // Copy the upload resource content into the real resource
+        D3D12_TEXTURE_COPY_LOCATION srcLocation = {};
+        srcLocation.pResource = uploadBuffer;
 	srcLocation.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
 	srcLocation.PlacedFootprint.Footprint.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 	srcLocation.PlacedFootprint.Footprint.Width = image_width;
@@ -310,27 +338,33 @@ bool LoadTextureFromMemory(const void* data, size_t data_size, ID3D12Device* d3d
 	IM_ASSERT(SUCCEEDED(hr));
 
 	ID3D12GraphicsCommandList* cmdList = NULL;
-	hr = d3d_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, cmdAlloc, NULL, IID_PPV_ARGS(&cmdList));
-	IM_ASSERT(SUCCEEDED(hr));
+        hr = d3d_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, cmdAlloc, NULL, IID_PPV_ARGS(&cmdList));
+        IM_ASSERT(SUCCEEDED(hr));
 
-	cmdList->CopyTextureRegion(&dstLocation, 0, 0, 0, &srcLocation, NULL);
-	cmdList->ResourceBarrier(1, &barrier);
+        cmdList->CopyTextureRegion(&dstLocation, 0, 0, 0, &srcLocation, NULL);
+        cmdList->ResourceBarrier(1, &barrier);
 
-	hr = cmdList->Close();
-	IM_ASSERT(SUCCEEDED(hr));
+        DebugLog("LoadTextureFromMemory: command list recording finished");
 
-	// Execute the copy
-	cmdQueue->ExecuteCommandLists(1, (ID3D12CommandList* const*)&cmdList);
-	hr = cmdQueue->Signal(fence, 1);
-	IM_ASSERT(SUCCEEDED(hr));
+        hr = cmdList->Close();
+        IM_ASSERT(SUCCEEDED(hr));
 
-	// Wait for everything to complete
-	fence->SetEventOnCompletion(1, event);
-	WaitForSingleObject(event, INFINITE);
+        // Execute the copy
+        cmdQueue->ExecuteCommandLists(1, (ID3D12CommandList* const*)&cmdList);
+        hr = cmdQueue->Signal(fence, 1);
+        IM_ASSERT(SUCCEEDED(hr));
 
-	// Tear down our temporary command queue and release the upload resource
-	cmdList->Release();
-	cmdAlloc->Release();
+        DebugLog("LoadTextureFromMemory: copy submitted to GPU");
+
+        // Wait for everything to complete
+        fence->SetEventOnCompletion(1, event);
+        WaitForSingleObject(event, INFINITE);
+
+        DebugLog("LoadTextureFromMemory: GPU copy completed");
+
+        // Tear down our temporary command queue and release the upload resource
+        cmdList->Release();
+        cmdAlloc->Release();
 	cmdQueue->Release();
 	CloseHandle(event);
 	fence->Release();
@@ -347,30 +381,40 @@ bool LoadTextureFromMemory(const void* data, size_t data_size, ID3D12Device* d3d
 	d3d_device->CreateShaderResourceView(pTexture, &srvDesc, srv_cpu_handle);
 
 	// Return results
-	*out_tex_resource = pTexture;
-	*out_width = image_width;
-	*out_height = image_height;
-	stbi_image_free(image_data);
+        *out_tex_resource = pTexture;
+        *out_width = image_width;
+        *out_height = image_height;
+        stbi_image_free(image_data);
 
-	return true;
+        DebugLog("LoadTextureFromMemory: finished successfully");
+        return true;
 }
 
 bool LoadTextureFromFile(const char* file_name, ID3D12Device* d3d_device, D3D12_CPU_DESCRIPTOR_HANDLE srv_cpu_handle, ID3D12Resource** out_tex_resource, int* out_width, int* out_height)
 {
-	FILE* f = fopen(file_name, "rb");
-	if (f == NULL)
-		return false;
-	fseek(f, 0, SEEK_END);
-	size_t file_size = (size_t)ftell(f);
-	if (file_size == -1)
-		return false;
-	fseek(f, 0, SEEK_SET);
-	void* file_data = IM_ALLOC(file_size);
-	fread(file_data, 1, file_size, f);
-	fclose(f);
-	bool ret = LoadTextureFromMemory(file_data, file_size, d3d_device, srv_cpu_handle, out_tex_resource, out_width, out_height);
-	IM_FREE(file_data);
-	return ret;
+        DebugLog("LoadTextureFromFile: start (%s)", file_name);
+        FILE* f = fopen(file_name, "rb");
+        if (f == NULL)
+        {
+                DebugLog("LoadTextureFromFile: failed to open file");
+                return false;
+        }
+        fseek(f, 0, SEEK_END);
+        size_t file_size = (size_t)ftell(f);
+        if (file_size == -1)
+        {
+                DebugLog("LoadTextureFromFile: failed to get file size");
+                return false;
+        }
+        fseek(f, 0, SEEK_SET);
+        void* file_data = IM_ALLOC(file_size);
+        fread(file_data, 1, file_size, f);
+        fclose(f);
+        bool ret = LoadTextureFromMemory(file_data, file_size, d3d_device, srv_cpu_handle, out_tex_resource, out_width, out_height);
+        IM_FREE(file_data);
+
+        DebugLog("LoadTextureFromFile: completed with result=%s", ret ? "true" : "false");
+        return ret;
 }
 
 
@@ -2456,14 +2500,16 @@ int main(int, char**)
 
 bool HVKSYS::InitDX12(HWND hwnd)
 {
-	return CreateDeviceD3D(hwnd);
+        DebugLog("InitDX12: initializing device and swap chain");
+        return CreateDeviceD3D(hwnd);
 }
 
 bool HVKSYS::InitDX11(HWND hwnd)
 {
-	DXGI_SWAP_CHAIN_DESC sd{};
-	sd.BufferCount = 2;
-	sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        DebugLog("InitDX11: initializing D3D11 device and swap chain");
+        DXGI_SWAP_CHAIN_DESC sd{};
+        sd.BufferCount = 2;
+        sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 	sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
 	sd.OutputWindow = hwnd;
 	sd.SampleDesc.Count = 1;
@@ -2478,10 +2524,10 @@ bool HVKSYS::InitDX11(HWND hwnd)
 	D3D_FEATURE_LEVEL featureLevel;
 	const D3D_FEATURE_LEVEL featureLevels[] = { D3D_FEATURE_LEVEL_11_0 };
 
-	HRESULT hr = D3D11CreateDeviceAndSwapChain(
-		nullptr,
-		D3D_DRIVER_TYPE_HARDWARE,
-		nullptr,
+        HRESULT hr = D3D11CreateDeviceAndSwapChain(
+                nullptr,
+                D3D_DRIVER_TYPE_HARDWARE,
+                nullptr,
 		createDeviceFlags,
 		featureLevels,
 		1,
@@ -2490,14 +2536,18 @@ bool HVKSYS::InitDX11(HWND hwnd)
 		&g_pSwapChain11,
 		&g_pd3dDevice11,
 		&featureLevel,
-		&g_pd3dDeviceContext11
-	);
+                &g_pd3dDeviceContext11
+        );
 
         if (FAILED(hr))
+        {
+                DebugLog("InitDX11: D3D11CreateDeviceAndSwapChain failed (hr=0x%lx)", hr);
                 return false;
+        }
 
         CreateRenderTargetDX11();
         g_GlowPipeline11.Initialize(g_pd3dDevice11);
+        DebugLog("InitDX11: completed successfully");
         return true;
 }
 
@@ -2505,9 +2555,10 @@ bool HVKSYS::InitDX11(HWND hwnd)
 
 bool CreateDeviceD3D(HWND hWnd)
 {
-	// Setup swap chain
-	// This is a basic setup. Optimally could handle fullscreen mode differently. See #8979 for suggestions.
-	DXGI_SWAP_CHAIN_DESC1 sd;
+        DebugLog("CreateDeviceD3D: starting device creation");
+        // Setup swap chain
+        // This is a basic setup. Optimally could handle fullscreen mode differently. See #8979 for suggestions.
+        DXGI_SWAP_CHAIN_DESC1 sd;
 	{
 		ZeroMemory(&sd, sizeof(sd));
 		sd.BufferCount = APP_NUM_BACK_BUFFERS;
@@ -2526,17 +2577,23 @@ bool CreateDeviceD3D(HWND hWnd)
 
 	// [DEBUG] Enable debug interface
 #ifdef DX12_ENABLE_DEBUG_LAYER
-	ID3D12Debug* pdx12Debug = nullptr;
-	if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&pdx12Debug))))
-		pdx12Debug->EnableDebugLayer();
+        ID3D12Debug* pdx12Debug = nullptr;
+        if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&pdx12Debug))))
+        {
+                DebugLog("CreateDeviceD3D: enabling DX12 debug layer");
+                pdx12Debug->EnableDebugLayer();
+        }
 #endif
 
-	// Create device
-	D3D_FEATURE_LEVEL featureLevel = D3D_FEATURE_LEVEL_11_0;
-	if (D3D12CreateDevice(nullptr, featureLevel, IID_PPV_ARGS(&g_pd3dDevice)) != S_OK)
-		return false;
+        // Create device
+        D3D_FEATURE_LEVEL featureLevel = D3D_FEATURE_LEVEL_11_0;
+        if (D3D12CreateDevice(nullptr, featureLevel, IID_PPV_ARGS(&g_pd3dDevice)) != S_OK)
+        {
+                DebugLog("CreateDeviceD3D: D3D12CreateDevice failed");
+                return false;
+        }
 
-	// [DEBUG] Setup debug interface to break on any warnings/errors
+        // [DEBUG] Setup debug interface to break on any warnings/errors
 #ifdef DX12_ENABLE_DEBUG_LAYER
 	if (pdx12Debug != nullptr)
 	{
@@ -2559,17 +2616,20 @@ bool CreateDeviceD3D(HWND hWnd)
 	}
 #endif
 
-	{
-		D3D12_DESCRIPTOR_HEAP_DESC desc = {};
-		desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-		desc.NumDescriptors = APP_NUM_BACK_BUFFERS;
-		desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-		desc.NodeMask = 1;
-		if (g_pd3dDevice->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&g_pd3dRtvDescHeap)) != S_OK)
-			return false;
+        {
+                D3D12_DESCRIPTOR_HEAP_DESC desc = {};
+                desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+                desc.NumDescriptors = APP_NUM_BACK_BUFFERS;
+                desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+                desc.NodeMask = 1;
+                if (g_pd3dDevice->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&g_pd3dRtvDescHeap)) != S_OK)
+                {
+                        DebugLog("CreateDeviceD3D: failed to create RTV descriptor heap");
+                        return false;
+                }
 
-		SIZE_T rtvDescriptorSize = g_pd3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
-		D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = g_pd3dRtvDescHeap->GetCPUDescriptorHandleForHeapStart();
+                SIZE_T rtvDescriptorSize = g_pd3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+                D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = g_pd3dRtvDescHeap->GetCPUDescriptorHandleForHeapStart();
 		for (UINT i = 0; i < APP_NUM_BACK_BUFFERS; i++)
 		{
 			g_mainRenderTargetDescriptor[i] = rtvHandle;
@@ -2577,66 +2637,102 @@ bool CreateDeviceD3D(HWND hWnd)
 		}
 	}
 
-	{
-		D3D12_DESCRIPTOR_HEAP_DESC desc = {};
-		desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-		desc.NumDescriptors = APP_SRV_HEAP_SIZE;
-		desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-		if (g_pd3dDevice->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&g_pd3dSrvDescHeap)) != S_OK)
-			return false;
-		g_pd3dSrvDescHeapAlloc.Create(g_pd3dDevice, g_pd3dSrvDescHeap);
-	}
+        {
+                D3D12_DESCRIPTOR_HEAP_DESC desc = {};
+                desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+                desc.NumDescriptors = APP_SRV_HEAP_SIZE;
+                desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+                if (g_pd3dDevice->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&g_pd3dSrvDescHeap)) != S_OK)
+                {
+                        DebugLog("CreateDeviceD3D: failed to create SRV descriptor heap");
+                        return false;
+                }
+                g_pd3dSrvDescHeapAlloc.Create(g_pd3dDevice, g_pd3dSrvDescHeap);
+        }
 
-	{
-		D3D12_COMMAND_QUEUE_DESC desc = {};
-		desc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
-		desc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
-		desc.NodeMask = 1;
-		if (g_pd3dDevice->CreateCommandQueue(&desc, IID_PPV_ARGS(&g_pd3dCommandQueue)) != S_OK)
-			return false;
-	}
+        {
+                D3D12_COMMAND_QUEUE_DESC desc = {};
+                desc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
+                desc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
+                desc.NodeMask = 1;
+                if (g_pd3dDevice->CreateCommandQueue(&desc, IID_PPV_ARGS(&g_pd3dCommandQueue)) != S_OK)
+                {
+                        DebugLog("CreateDeviceD3D: failed to create command queue");
+                        return false;
+                }
+        }
 
-	for (UINT i = 0; i < APP_NUM_FRAMES_IN_FLIGHT; i++)
-		if (g_pd3dDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&g_frameContext[i].CommandAllocator)) != S_OK)
-			return false;
+        for (UINT i = 0; i < APP_NUM_FRAMES_IN_FLIGHT; i++)
+                if (g_pd3dDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&g_frameContext[i].CommandAllocator)) != S_OK)
+                {
+                        DebugLog("CreateDeviceD3D: failed to create command allocator %u", i);
+                        return false;
+                }
 
-	if (g_pd3dDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, g_frameContext[0].CommandAllocator, nullptr, IID_PPV_ARGS(&g_pd3dCommandList)) != S_OK ||
-		g_pd3dCommandList->Close() != S_OK)
-		return false;
+        if (g_pd3dDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, g_frameContext[0].CommandAllocator, nullptr, IID_PPV_ARGS(&g_pd3dCommandList)) != S_OK ||
+                g_pd3dCommandList->Close() != S_OK)
+        {
+                DebugLog("CreateDeviceD3D: failed to create or close primary command list");
+                return false;
+        }
 
-	// Dedicated upload allocator/list (kept separate from per-frame allocators)
-	if (g_pd3dDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&g_pd3dUploadCmdAlloc)) != S_OK)
-		return false;
+        // Dedicated upload allocator/list (kept separate from per-frame allocators)
+        if (g_pd3dDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&g_pd3dUploadCmdAlloc)) != S_OK)
+        {
+                DebugLog("CreateDeviceD3D: failed to create upload command allocator");
+                return false;
+        }
 
-	if (g_pd3dDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, g_pd3dUploadCmdAlloc, nullptr, IID_PPV_ARGS(&g_pd3dUploadCmdList)) != S_OK ||
-		g_pd3dUploadCmdList->Close() != S_OK)
-		return false;
+        if (g_pd3dDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, g_pd3dUploadCmdAlloc, nullptr, IID_PPV_ARGS(&g_pd3dUploadCmdList)) != S_OK ||
+                g_pd3dUploadCmdList->Close() != S_OK)
+        {
+                DebugLog("CreateDeviceD3D: failed to create or close upload command list");
+                return false;
+        }
 
-	if (g_pd3dDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&g_fence)) != S_OK)
-		return false;
+        if (g_pd3dDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&g_fence)) != S_OK)
+        {
+                DebugLog("CreateDeviceD3D: failed to create fence");
+                return false;
+        }
 
-	g_fenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-	if (g_fenceEvent == nullptr)
-		return false;
+        g_fenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+        if (g_fenceEvent == nullptr)
+        {
+                DebugLog("CreateDeviceD3D: failed to create fence event");
+                return false;
+        }
 
         {
                 IDXGIFactory5* dxgiFactory = nullptr;
                 IDXGISwapChain1* swapChain1 = nullptr;
                 if (CreateDXGIFactory1(IID_PPV_ARGS(&dxgiFactory)) != S_OK)
+                {
+                        DebugLog("CreateDeviceD3D: CreateDXGIFactory1 failed");
                         return false;
+                }
 
-		BOOL allow_tearing = FALSE;
-		dxgiFactory->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &allow_tearing, sizeof(allow_tearing));
-		g_SwapChainTearingSupport = (allow_tearing == TRUE);
-		if (g_SwapChainTearingSupport)
-			sd.Flags |= DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
+                BOOL allow_tearing = FALSE;
+                dxgiFactory->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &allow_tearing, sizeof(allow_tearing));
+                g_SwapChainTearingSupport = (allow_tearing == TRUE);
+                if (g_SwapChainTearingSupport)
+                {
+                        DebugLog("CreateDeviceD3D: tearing supported, enabling flag");
+                        sd.Flags |= DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
+                }
 
-		if (dxgiFactory->CreateSwapChainForHwnd(g_pd3dCommandQueue, hWnd, &sd, nullptr, nullptr, &swapChain1) != S_OK)
-			return false;
-		if (swapChain1->QueryInterface(IID_PPV_ARGS(&g_pSwapChain)) != S_OK)
-			return false;
-		if (g_SwapChainTearingSupport)
-			dxgiFactory->MakeWindowAssociation(hWnd, DXGI_MWA_NO_ALT_ENTER);
+                if (dxgiFactory->CreateSwapChainForHwnd(g_pd3dCommandQueue, hWnd, &sd, nullptr, nullptr, &swapChain1) != S_OK)
+                {
+                        DebugLog("CreateDeviceD3D: CreateSwapChainForHwnd failed");
+                        return false;
+                }
+                if (swapChain1->QueryInterface(IID_PPV_ARGS(&g_pSwapChain)) != S_OK)
+                {
+                        DebugLog("CreateDeviceD3D: failed to query IDXGISwapChain3");
+                        return false;
+                }
+                if (g_SwapChainTearingSupport)
+                        dxgiFactory->MakeWindowAssociation(hWnd, DXGI_MWA_NO_ALT_ENTER);
 
                 swapChain1->Release();
                 dxgiFactory->Release();
@@ -2645,31 +2741,36 @@ bool CreateDeviceD3D(HWND hWnd)
         }
 
         g_GlowPipeline12.Initialize(g_pd3dDevice);
+        DebugLog("CreateDeviceD3D: glow pipeline initialized");
         CreateRenderTarget();
+        DebugLog("CreateDeviceD3D: completed successfully");
         return true;
 }
 
 void CleanupDeviceD3D()
 {
-	CleanupRenderTarget();
-	if (g_pSwapChain) { g_pSwapChain->SetFullscreenState(false, nullptr); g_pSwapChain->Release(); g_pSwapChain = nullptr; }
-	if (g_hSwapChainWaitableObject != nullptr) { CloseHandle(g_hSwapChainWaitableObject); }
-	for (UINT i = 0; i < APP_NUM_FRAMES_IN_FLIGHT; i++)
-		if (g_frameContext[i].CommandAllocator) { g_frameContext[i].CommandAllocator->Release(); g_frameContext[i].CommandAllocator = nullptr; }
+        DebugLog("CleanupDeviceD3D: releasing resources");
+        CleanupRenderTarget();
+        if (g_pSwapChain) { g_pSwapChain->SetFullscreenState(false, nullptr); g_pSwapChain->Release(); g_pSwapChain = nullptr; }
+        if (g_hSwapChainWaitableObject != nullptr) { CloseHandle(g_hSwapChainWaitableObject); }
+        for (UINT i = 0; i < APP_NUM_FRAMES_IN_FLIGHT; i++)
+                if (g_frameContext[i].CommandAllocator) { g_frameContext[i].CommandAllocator->Release(); g_frameContext[i].CommandAllocator = nullptr; }
 	if (g_pd3dCommandQueue) { g_pd3dCommandQueue->Release(); g_pd3dCommandQueue = nullptr; }
 	if (g_pd3dCommandList) { g_pd3dCommandList->Release(); g_pd3dCommandList = nullptr; }
 	if (g_pd3dUploadCmdList) { g_pd3dUploadCmdList->Release();  g_pd3dUploadCmdList = nullptr; }
 	if (g_pd3dUploadCmdAlloc) { g_pd3dUploadCmdAlloc->Release(); g_pd3dUploadCmdAlloc = nullptr; }
 	if (g_pd3dRtvDescHeap) { g_pd3dRtvDescHeap->Release(); g_pd3dRtvDescHeap = nullptr; }
 	if (g_pd3dSrvDescHeap) { g_pd3dSrvDescHeap->Release(); g_pd3dSrvDescHeap = nullptr; }
-	if (g_fence) { g_fence->Release(); g_fence = nullptr; }
-	if (g_fenceEvent) { CloseHandle(g_fenceEvent); g_fenceEvent = nullptr; }
-	if (g_pd3dDevice) { g_pd3dDevice->Release(); g_pd3dDevice = nullptr; }
+        if (g_fence) { g_fence->Release(); g_fence = nullptr; }
+        if (g_fenceEvent) { CloseHandle(g_fenceEvent); g_fenceEvent = nullptr; }
+        if (g_pd3dDevice) { g_pd3dDevice->Release(); g_pd3dDevice = nullptr; }
+
+        DebugLog("CleanupDeviceD3D: completed");
 
 #ifdef DX12_ENABLE_DEBUG_LAYER
-	IDXGIDebug1* pDebug = nullptr;
-	if (SUCCEEDED(DXGIGetDebugInterface1(0, IID_PPV_ARGS(&pDebug))))
-	{
+        IDXGIDebug1* pDebug = nullptr;
+        if (SUCCEEDED(DXGIGetDebugInterface1(0, IID_PPV_ARGS(&pDebug))))
+        {
 		pDebug->ReportLiveObjects(DXGI_DEBUG_ALL, DXGI_DEBUG_RLO_SUMMARY);
 		pDebug->Release();
 	}
@@ -2678,69 +2779,81 @@ void CleanupDeviceD3D()
 
 void CreateRenderTarget()
 {
-	for (UINT i = 0; i < APP_NUM_BACK_BUFFERS; i++)
-	{
-		ID3D12Resource* pBackBuffer = nullptr;
-		g_pSwapChain->GetBuffer(i, IID_PPV_ARGS(&pBackBuffer));
-		g_pd3dDevice->CreateRenderTargetView(pBackBuffer, nullptr, g_mainRenderTargetDescriptor[i]);
-		g_mainRenderTargetResource[i] = pBackBuffer;
-	}
+        DebugLog("CreateRenderTarget: creating %d back buffers", APP_NUM_BACK_BUFFERS);
+        for (UINT i = 0; i < APP_NUM_BACK_BUFFERS; i++)
+        {
+                ID3D12Resource* pBackBuffer = nullptr;
+                g_pSwapChain->GetBuffer(i, IID_PPV_ARGS(&pBackBuffer));
+                g_pd3dDevice->CreateRenderTargetView(pBackBuffer, nullptr, g_mainRenderTargetDescriptor[i]);
+                g_mainRenderTargetResource[i] = pBackBuffer;
+        }
+        DebugLog("CreateRenderTarget: completed");
 }
 
 void CleanupRenderTarget()
 {
-	WaitForPendingOperations();
+        DebugLog("CleanupRenderTarget: waiting for GPU and releasing targets");
+        WaitForPendingOperations();
 
-	for (UINT i = 0; i < APP_NUM_BACK_BUFFERS; i++)
-		if (g_mainRenderTargetResource[i]) { g_mainRenderTargetResource[i]->Release(); g_mainRenderTargetResource[i] = nullptr; }
+        for (UINT i = 0; i < APP_NUM_BACK_BUFFERS; i++)
+                if (g_mainRenderTargetResource[i]) { g_mainRenderTargetResource[i]->Release(); g_mainRenderTargetResource[i] = nullptr; }
 }
 
 void HVKSYS::CreateRenderTargetDX11()
 {
-	ID3D11Texture2D* pBackBuffer = nullptr;
-	g_pSwapChain11->GetBuffer(0, IID_PPV_ARGS(&pBackBuffer));
-	if (pBackBuffer)
-	{
-		g_pd3dDevice11->CreateRenderTargetView(pBackBuffer, nullptr, &g_mainRenderTargetView11);
-		pBackBuffer->Release();
-	}
+        DebugLog("CreateRenderTargetDX11: creating render target view");
+        ID3D11Texture2D* pBackBuffer = nullptr;
+        g_pSwapChain11->GetBuffer(0, IID_PPV_ARGS(&pBackBuffer));
+        if (pBackBuffer)
+        {
+                g_pd3dDevice11->CreateRenderTargetView(pBackBuffer, nullptr, &g_mainRenderTargetView11);
+                pBackBuffer->Release();
+        }
+        DebugLog("CreateRenderTargetDX11: completed");
 }
 
 void HVKSYS::CleanupRenderTargetDX11()
 {
-	if (g_mainRenderTargetView11) { g_mainRenderTargetView11->Release(); g_mainRenderTargetView11 = nullptr; }
+        DebugLog("CleanupRenderTargetDX11: releasing render target");
+        if (g_mainRenderTargetView11) { g_mainRenderTargetView11->Release(); g_mainRenderTargetView11 = nullptr; }
 }
 
 void HVKSYS::CleanupDeviceD3D11()
 {
-	HVKSYS::CleanupRenderTargetDX11();
-	if (g_pSwapChain11) { g_pSwapChain11->Release(); g_pSwapChain11 = nullptr; }
-	if (g_pd3dDeviceContext11) { g_pd3dDeviceContext11->Release(); g_pd3dDeviceContext11 = nullptr; }
-	if (g_pd3dDevice11) { g_pd3dDevice11->Release(); g_pd3dDevice11 = nullptr; }
+        DebugLog("CleanupDeviceD3D11: releasing D3D11 resources");
+        HVKSYS::CleanupRenderTargetDX11();
+        if (g_pSwapChain11) { g_pSwapChain11->Release(); g_pSwapChain11 = nullptr; }
+        if (g_pd3dDeviceContext11) { g_pd3dDeviceContext11->Release(); g_pd3dDeviceContext11 = nullptr; }
+        if (g_pd3dDevice11) { g_pd3dDevice11->Release(); g_pd3dDevice11 = nullptr; }
+        DebugLog("CleanupDeviceD3D11: completed");
 }
 
 
 void WaitForPendingOperations()
 {
-	g_pd3dCommandQueue->Signal(g_fence, ++g_fenceLastSignaledValue);
+        DebugLog("WaitForPendingOperations: signaling fence value=%llu", g_fenceLastSignaledValue + 1);
+        g_pd3dCommandQueue->Signal(g_fence, ++g_fenceLastSignaledValue);
 
-	g_fence->SetEventOnCompletion(g_fenceLastSignaledValue, g_fenceEvent);
-	::WaitForSingleObject(g_fenceEvent, INFINITE);
+        g_fence->SetEventOnCompletion(g_fenceLastSignaledValue, g_fenceEvent);
+        ::WaitForSingleObject(g_fenceEvent, INFINITE);
+        DebugLog("WaitForPendingOperations: completed");
 }
 
 FrameContext* WaitForNextFrameContext()
 {
-	FrameContext* frame_context = &g_frameContext[g_frameIndex % APP_NUM_FRAMES_IN_FLIGHT];
-	if (g_fence->GetCompletedValue() < frame_context->FenceValue)
-	{
-		g_fence->SetEventOnCompletion(frame_context->FenceValue, g_fenceEvent);
-		HANDLE waitableObjects[] = { g_hSwapChainWaitableObject, g_fenceEvent };
-		::WaitForMultipleObjects(2, waitableObjects, TRUE, INFINITE);
-	}
-	else
-		::WaitForSingleObject(g_hSwapChainWaitableObject, INFINITE);
+        DebugLog("WaitForNextFrameContext: waiting for frame %u", g_frameIndex % APP_NUM_FRAMES_IN_FLIGHT);
+        FrameContext* frame_context = &g_frameContext[g_frameIndex % APP_NUM_FRAMES_IN_FLIGHT];
+        if (g_fence->GetCompletedValue() < frame_context->FenceValue)
+        {
+                g_fence->SetEventOnCompletion(frame_context->FenceValue, g_fenceEvent);
+                HANDLE waitableObjects[] = { g_hSwapChainWaitableObject, g_fenceEvent };
+                ::WaitForMultipleObjects(2, waitableObjects, TRUE, INFINITE);
+        }
+        else
+                ::WaitForSingleObject(g_hSwapChainWaitableObject, INFINITE);
 
-	return frame_context;
+        DebugLog("WaitForNextFrameContext: frame %u ready", g_frameIndex % APP_NUM_FRAMES_IN_FLIGHT);
+        return frame_context;
 }
 
 // Forward declare message handler from imgui_impl_win32.cpp

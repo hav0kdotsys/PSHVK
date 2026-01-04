@@ -69,8 +69,9 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
-    <UseDebugLibraries>true</UseDebugLibraries>
+    <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v145</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
@@ -111,6 +112,10 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <IncludePath>$(ProjectDir)libs\curl\x64;$(ProjectDir)libs\json\include\nlohmann;$(WindowsSDK_IncludePath);$(ProjectDir)libs\D3D12\DirectX-Headers\include\directx;$(ProjectDir)libs\emscripten;$(ProjectDir)imgui\backends;$(ProjectDir)imgui;$(IncludePath)</IncludePath>
+    <LibraryPath>$(ProjectDir)libs\curl\x64;$(LibraryPath)</LibraryPath>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <IncludePath>$(ProjectDir)libs\curl\x64;$(ProjectDir)libs\json\include\nlohmann;$(WindowsSDK_IncludePath);$(ProjectDir)libs\D3D12\DirectX-Headers\include\directx;$(ProjectDir)libs\emscripten;$(ProjectDir)imgui\backends;$(ProjectDir)imgui;$(IncludePath)</IncludePath>
     <LibraryPath>$(ProjectDir)libs\curl\x64;$(LibraryPath)</LibraryPath>
