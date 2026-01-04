@@ -1,0 +1,64 @@
+# Environment secrets
+.env
+.env.*
+*.env
+
+# User-specific IDE settings
+.vscode/
+.vs/
+.idea/
+*.code-workspace
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Build and compiler outputs
+build/
+bin/
+out/
+dist/
+Debug*/
+Release*/
+x64/
+x86/
+obj/
+.ipch/
+*.obj
+*.o
+*.ilk
+*.iobj
+*.ipdb
+*.pdb
+*.pch
+*.idb
+*.tlog
+*.cache
+
+# Generated binaries
+*.exe
+*.dll
+*.lib
+*.so
+*.dylib
+
+# CMake build artifacts
+CMakeFiles/
+CMakeCache.txt
+cmake-build-*/
+install_manifest.txt
+Testing/
+
+# Logs and temp files
+*.log
+*.tmp
+*.temp
+*.bak
+*.orig
+*.swp
+*.swo
+*.stackdump
+
+# OS-specific files
+.DS_Store
+Thumbs.db
