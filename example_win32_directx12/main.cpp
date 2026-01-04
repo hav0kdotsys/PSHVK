@@ -673,52 +673,64 @@ bool TextureLoader::ReloadBackgroundTexture(const std::wstring& newPath)
 
 static void RequestBackgroundReload(const std::wstring& newPath, c_settings* appSettings, c_usersettings* appUser)
 {
-	{
-		std::lock_guard<std::mutex> lock(g_bgJob.mtx);
-		g_bgJob.path = newPath;
-		g_bgJob.bytes.clear();
-	}
+        DebugLog("RequestBackgroundReload: begin path=%s", WStringToUtf8(newPath).c_str());
+        {
+                std::lock_guard<std::mutex> lock(g_bgJob.mtx);
+                g_bgJob.path = newPath;
+                g_bgJob.bytes.clear();
+        }
 
 	g_bgJob.requested.store(true);
 	g_bgJob.bytes_ready.store(false);
 	g_bgJob.upload_submitted.store(false);
 	g_bgJob.new_tex = (ImTextureID)nullptr;
 	g_bgJob.fence_value = 0;
-	g_bgJob.new_texture_res = nullptr;
-	g_bgJob.new_upload_res = nullptr;
-	g_bgJob.new_cpu = { 0 };
-	g_bgJob.new_gpu = { 0 };
+        g_bgJob.new_texture_res = nullptr;
+        g_bgJob.new_upload_res = nullptr;
+        g_bgJob.new_cpu = { 0 };
+        g_bgJob.new_gpu = { 0 };
 
 	// cache vsync and fps values
 	g_App.Lcache.vsync = appSettings->vsync;
-	g_App.Lcache.target_fps = appUser->render.target_fps;
+        g_App.Lcache.target_fps = appUser->render.target_fps;
 
 	// front-end transition ON immediately
-	appSettings->vsync = false;
-	appUser->render.target_fps = 60;
-	appSettings->isLoading = true;
+        appSettings->vsync = false;
+        appUser->render.target_fps = 60;
+        appSettings->isLoading = true;
+
+        DebugLog(
+                "RequestBackgroundReload: front-end set to loading (vsync=%d target_fps=%d)",
+                appSettings->vsync,
+                appUser->render.target_fps);
 }
 
 
 static void BgReloadWorker()
 {
-	// Only proceed if someone requested
-	if (!g_bgJob.requested.load())
-		return;
+        DebugLog("BgReloadWorker: invoked (requested=%d)", g_bgJob.requested.load());
+        // Only proceed if someone requested
+        if (!g_bgJob.requested.load())
+                return;
 
-	std::this_thread::sleep_for(std::chrono::milliseconds(1300));
+        std::this_thread::sleep_for(std::chrono::milliseconds(1300));
 
 	std::wstring path;
-	{
-		std::lock_guard<std::mutex> lock(g_bgJob.mtx);
-		path = g_bgJob.path;
-	}
+        {
+                std::lock_guard<std::mutex> lock(g_bgJob.mtx);
+                path = g_bgJob.path;
+        }
+
+        DebugLog("BgReloadWorker: reading path=%s", WStringToUtf8(path).c_str());
 
 	// Read bytes (binary)
 	std::string utf8 = WStringToUtf8(path);
-	FILE* f = fopen(utf8.c_str(), "rb");
-	if (!f)
-		return;
+        FILE* f = fopen(utf8.c_str(), "rb");
+        if (!f)
+        {
+                DebugLog("BgReloadWorker: fopen failed for %s", utf8.c_str());
+                return;
+        }
 
 	fseek(f, 0, SEEK_END);
 	size_t sz = (size_t)ftell(f);
@@ -726,15 +738,18 @@ static void BgReloadWorker()
 
 	std::vector<unsigned char> bytes;
 	bytes.resize(sz);
-	fread(bytes.data(), 1, sz, f);
-	fclose(f);
+        fread(bytes.data(), 1, sz, f);
+        fclose(f);
 
-	{
-		std::lock_guard<std::mutex> lock(g_bgJob.mtx);
-		g_bgJob.bytes = std::move(bytes);
-	}
+        DebugLog("BgReloadWorker: read %zu bytes", sz);
 
-	g_bgJob.bytes_ready.store(true);
+        {
+                std::lock_guard<std::mutex> lock(g_bgJob.mtx);
+                g_bgJob.bytes = std::move(bytes);
+        }
+
+        g_bgJob.bytes_ready.store(true);
+        DebugLog("BgReloadWorker: bytes ready set=true");
 }
 
 static void DX12_FreeSrvByImTextureID(ImTextureID id)
@@ -954,22 +969,31 @@ static bool DX12_CreateTextureFromImageBytes(
 
 static bool SubmitBgUploadDX12()
 {
-	if (g_App.g_RenderBackend != RenderBackend::DX12)
-		return false;
+        if (g_App.g_RenderBackend != RenderBackend::DX12)
+                return false;
 
-	if (!g_bgJob.requested.load() || !g_bgJob.bytes_ready.load())
-		return false;
+        if (!g_bgJob.requested.load() || !g_bgJob.bytes_ready.load())
+                return false;
 
-	if (g_bgJob.upload_submitted.load())
-		return false;
+        if (g_bgJob.upload_submitted.load())
+                return false;
 
-	std::vector<unsigned char> bytes;
-	{
-		std::lock_guard<std::mutex> lock(g_bgJob.mtx);
-		bytes = g_bgJob.bytes;
-	}
-	if (bytes.empty())
-		return false;
+        DebugLog(
+                "SubmitBgUploadDX12: begin (requested=%d bytes_ready=%d upload_submitted=%d)",
+                g_bgJob.requested.load(),
+                g_bgJob.bytes_ready.load(),
+                g_bgJob.upload_submitted.load());
+
+        std::vector<unsigned char> bytes;
+        {
+                std::lock_guard<std::mutex> lock(g_bgJob.mtx);
+                bytes = g_bgJob.bytes;
+        }
+        if (bytes.empty())
+        {
+                DebugLog("SubmitBgUploadDX12: abort (empty bytes)");
+                return false;
+        }
 
 	std::lock_guard<std::mutex> uploadLock(g_dx12UploadMutex);
 
@@ -985,27 +1009,28 @@ static bool SubmitBgUploadDX12()
 	ID3D12Resource* texRes = nullptr;
 	ID3D12Resource* uploadRes = nullptr;
 
-	if (!DX12_CreateTextureFromImageBytes(
-		g_pd3dDevice,
-		g_pd3dUploadCmdList,
-		bytes.data(),
-		bytes.size(),
-		cpu,
-		&texRes,
-		&uploadRes))
-	{
-		g_pd3dUploadCmdList->Close();
-		g_pd3dSrvDescHeapAlloc.Free(cpu, gpu);
-		return false;
-	}
+        if (!DX12_CreateTextureFromImageBytes(
+                g_pd3dDevice,
+                g_pd3dUploadCmdList,
+                bytes.data(),
+                bytes.size(),
+                cpu,
+                &texRes,
+                &uploadRes))
+        {
+                g_pd3dUploadCmdList->Close();
+                g_pd3dSrvDescHeapAlloc.Free(cpu, gpu);
+                DebugLog("SubmitBgUploadDX12: DX12_CreateTextureFromImageBytes failed");
+                return false;
+        }
 
 	g_pd3dUploadCmdList->Close();
 	ID3D12CommandList* lists[] = { g_pd3dUploadCmdList };
 	g_pd3dCommandQueue->ExecuteCommandLists(1, lists);
 
 	// Signal fence
-	const UINT64 fv = ++g_fenceLastSignaledValue;
-	g_pd3dCommandQueue->Signal(g_fence, fv);
+        const UINT64 fv = ++g_fenceLastSignaledValue;
+        g_pd3dCommandQueue->Signal(g_fence, fv);
 
 	// Store job state
 	g_bgJob.new_tex = (ImTextureID)gpu.ptr;
@@ -1013,43 +1038,64 @@ static bool SubmitBgUploadDX12()
 	g_bgJob.new_texture_res = texRes;     // keep alive
 	g_bgJob.new_upload_res = uploadRes;  // release after fence
 	g_bgJob.new_cpu = cpu;
-	g_bgJob.new_gpu = gpu;
-	g_bgJob.upload_submitted.store(true);
+        g_bgJob.new_gpu = gpu;
+        g_bgJob.upload_submitted.store(true);
 
-	return true;
+        DebugLog(
+                "SubmitBgUploadDX12: submitted (bytes=%zu fence=%llu cpu=%p gpu=%llu)",
+                bytes.size(),
+                (unsigned long long)fv,
+                (void*)cpu.ptr,
+                (unsigned long long)gpu.ptr);
+
+        return true;
 }
 
 
 static void FinalizeBgUploadIfReady()
 {
-	if (g_App.g_RenderBackend != RenderBackend::DX12)
-		return;
+        if (g_App.g_RenderBackend != RenderBackend::DX12)
+                return;
 
-	if (!g_bgJob.upload_submitted.load())
-		return;
+        if (!g_bgJob.upload_submitted.load())
+                return;
 
-	if (g_fence->GetCompletedValue() < g_bgJob.fence_value)
-		return;
+        if (g_fence->GetCompletedValue() < g_bgJob.fence_value)
+        {
+                DebugLog(
+                        "FinalizeBgUploadIfReady: waiting (completed=%llu target=%llu)",
+                        (unsigned long long)g_fence->GetCompletedValue(),
+                        (unsigned long long)g_bgJob.fence_value);
+                return;
+        }
 
 	// Upload buffer no longer needed once GPU finished the copy
-	if (g_bgJob.new_upload_res)
-	{
-		g_bgJob.new_upload_res->Release();
-		g_bgJob.new_upload_res = nullptr;
-	}
+        if (g_bgJob.new_upload_res)
+        {
+                g_bgJob.new_upload_res->Release();
+                g_bgJob.new_upload_res = nullptr;
+                DebugLog("FinalizeBgUploadIfReady: released upload buffer");
+        }
 
 	// Free old SRV slot (prevents heap exhaustion)
-	if (BgTexture)
-	{
-		DX12_FreeSrvByImTextureID(BgTexture);
-		BgTexture = (ImTextureID)nullptr;
-	}
+        if (BgTexture)
+        {
+                DX12_FreeSrvByImTextureID(BgTexture);
+                BgTexture = (ImTextureID)nullptr;
+                DebugLog("FinalizeBgUploadIfReady: freed previous BgTexture SRV");
+        }
 
 	// Keep new texture resource alive (matches your current lifetime model)
-	if (g_bgJob.new_texture_res)
-		g_dx12LiveTextures.push_back(g_bgJob.new_texture_res);
+        if (g_bgJob.new_texture_res)
+                g_dx12LiveTextures.push_back(g_bgJob.new_texture_res);
 
-	BgTexture = g_bgJob.new_tex;
+        BgTexture = g_bgJob.new_tex;
+
+        DebugLog(
+                "FinalizeBgUploadIfReady: completed (new_tex=%llu cpu=%p gpu=%llu)",
+                (unsigned long long)g_bgJob.new_tex,
+                (void*)g_bgJob.new_cpu.ptr,
+                (unsigned long long)g_bgJob.new_gpu.ptr);
 
 	// Reset job
 	g_bgJob.requested.store(false);
@@ -1060,22 +1106,28 @@ static void FinalizeBgUploadIfReady()
 	g_bgJob.fence_value = 0;
 	g_bgJob.new_texture_res = nullptr;
 	g_bgJob.new_cpu = { 0 };
-	g_bgJob.new_gpu = { 0 };
+        g_bgJob.new_gpu = { 0 };
 
-	// Restore
-	settings->vsync = g_App.Lcache.vsync;
-	user->render.target_fps = g_App.Lcache.target_fps;
-	settings->isLoading = false;
+        // Restore
+        settings->vsync = g_App.Lcache.vsync;
+        user->render.target_fps = g_App.Lcache.target_fps;
+        settings->isLoading = false;
+        DebugLog("FinalizeBgUploadIfReady: restored settings (vsync=%d target_fps=%d)", settings->vsync, user->render.target_fps);
 }
 
 
 static void ApplyBgReloadDX11IfReady()
 {
-	if (g_App.g_RenderBackend != RenderBackend::DX11)
-		return;
+        if (g_App.g_RenderBackend != RenderBackend::DX11)
+                return;
 
-	if (!g_bgJob.requested.load() || !g_bgJob.bytes_ready.load())
-		return;
+        if (!g_bgJob.requested.load() || !g_bgJob.bytes_ready.load())
+                return;
+
+        DebugLog(
+                "ApplyBgReloadDX11IfReady: processing (requested=%d bytes_ready=%d)",
+                g_bgJob.requested.load(),
+                g_bgJob.bytes_ready.load());
 
 	std::wstring path;
 	{
@@ -1089,6 +1141,7 @@ static void ApplyBgReloadDX11IfReady()
                 TextureLoader::FreeTexture(bg, g_App);
                 bg = {};
                 BgTexture = (ImTextureID)nullptr;
+                DebugLog("ApplyBgReloadDX11IfReady: freed previous texture");
         }
 
         HVKTexture tex{};
@@ -1096,14 +1149,19 @@ static void ApplyBgReloadDX11IfReady()
         {
                 bg = tex;
                 BgTexture = tex.id;
+                DebugLog("ApplyBgReloadDX11IfReady: loaded new texture id=%llu", (unsigned long long)BgTexture);
         }
 
 	// reset job
 	g_bgJob.requested.store(false);
 	g_bgJob.bytes_ready.store(false);
-	settings->vsync = g_App.Lcache.vsync;
-	user->render.target_fps = g_App.Lcache.target_fps;
-	settings->isLoading = false;
+        settings->vsync = g_App.Lcache.vsync;
+        user->render.target_fps = g_App.Lcache.target_fps;
+        settings->isLoading = false;
+        DebugLog(
+                "ApplyBgReloadDX11IfReady: restore settings (vsync=%d target_fps=%d)",
+                settings->vsync,
+                user->render.target_fps);
 }
 
 static std::wstring MakeFramePath(const std::wstring& base, int i)
@@ -1240,19 +1298,26 @@ void SwapLoadingIconTheme(LoadingTheme theme)
 
 void PumpTexturesToGPU()
 {
-	if (g_App.g_RenderBackend != RenderBackend::DX12)
-		return;
+        if (g_App.g_RenderBackend != RenderBackend::DX12)
+                return;
 
-	if (g_texturesReady.load())
-		return;
+        if (g_texturesReady.load())
+                return;
 
-	std::vector<PendingFrame> work;
-	{
-		std::lock_guard<std::mutex> lock(g_texMutex);
-		if (g_pendingFrames.empty())
-			return;
-		work.swap(g_pendingFrames);
-	}
+        size_t pendingCount = 0;
+        std::vector<PendingFrame> work;
+        {
+                std::lock_guard<std::mutex> lock(g_texMutex);
+                if (g_pendingFrames.empty())
+                        return;
+                work.swap(g_pendingFrames);
+                pendingCount = work.size();
+        }
+
+        DebugLog(
+                "PumpTexturesToGPU: uploading %zu pending frames (texturesReady=%d)",
+                pendingCount,
+                g_texturesReady.load());
 
 	std::lock_guard<std::mutex> uploadLock(g_dx12UploadMutex);
 
@@ -1793,30 +1858,35 @@ int main(int, char**)
 		std::cout << e.what() << std::endl;
 	}
 
-	// Main loop
-	bool done = false;
-	while (!done)
-	{
-		// Poll and handle messages (inputs, window resize, etc.)
-		// See the WndProc() function below for our to dispatch events to the Win32 backend.
-		MSG msg;
-		while (::PeekMessage(&msg, nullptr, 0U, 0U, PM_REMOVE))
-		{
+        // Main loop
+        bool done = false;
+        uint64_t frameCounter = 0;
+        while (!done)
+        {
+                const uint64_t frameIndex = frameCounter++;
+                DebugLog("Frame %llu: begin", (unsigned long long)frameIndex);
+
+                // Poll and handle messages (inputs, window resize, etc.)
+                // See the WndProc() function below for our to dispatch events to the Win32 backend.
+                MSG msg;
+                while (::PeekMessage(&msg, nullptr, 0U, 0U, PM_REMOVE))
+                {
 			::TranslateMessage(&msg);
 			::DispatchMessage(&msg);
 			if (msg.message == WM_QUIT)
 				done = true;
 		}
-		if (done)
-			break;
+                if (done)
+                        break;
 
-		// Handle window screen locked
-		if ((g_SwapChainOccluded && g_pSwapChain->Present(0, DXGI_PRESENT_TEST) == DXGI_STATUS_OCCLUDED) || ::IsIconic(hwnd))
-		{
-			::Sleep(10);
-			continue;
-		}
-		g_SwapChainOccluded = false;
+                // Handle window screen locked
+                if ((g_SwapChainOccluded && g_pSwapChain->Present(0, DXGI_PRESENT_TEST) == DXGI_STATUS_OCCLUDED) || ::IsIconic(hwnd))
+                {
+                        ::Sleep(10);
+                        DebugLog("Frame %llu: skipped due to occlusion/iconic", (unsigned long long)frameIndex);
+                        continue;
+                }
+                g_SwapChainOccluded = false;
 
 		g_fpsLimiter.SetTargetFPS(settings->vsync ? 100 : user->render.target_fps);   // *after* backend init
 
@@ -1831,85 +1901,97 @@ int main(int, char**)
 			Disk::RefreshPartitionsForSelectedDisk();
 		}
 
-		g_Sys.Update();
-		PumpTexturesToGPU();
+                g_Sys.Update();
+                DebugLog("Frame %llu: after g_Sys.Update", (unsigned long long)frameIndex);
+                PumpTexturesToGPU();
+                DebugLog("Frame %llu: after PumpTexturesToGPU", (unsigned long long)frameIndex);
 
-		// Background reload processing
-		ApplyBgReloadDX11IfReady();
-		SubmitBgUploadDX12();
-		FinalizeBgUploadIfReady();
+                // Background reload processing
+                ApplyBgReloadDX11IfReady();
+                bool submitted = SubmitBgUploadDX12();
+                if (submitted)
+                        DebugLog("Frame %llu: SubmitBgUploadDX12 returned true", (unsigned long long)frameIndex);
+                FinalizeBgUploadIfReady();
 
-		ImGui::UpdateStyle(*user, style);
-		// PollSettingsHotReload();
+                DebugLog("Frame %llu: before ImGui::UpdateStyle", (unsigned long long)frameIndex);
+                ImGui::UpdateStyle(*user, style);
+                DebugLog("Frame %llu: after ImGui::UpdateStyle", (unsigned long long)frameIndex);
+                PollSettingsHotReload();
 
 		switch (settings->themecombos.BgThemeIdx)
 		{
 		case 0:
 		{
-			if (user->style.bg_theme != BgTheme::BLACK)
-			{
-				user->style.bg_theme = BgTheme::BLACK;
-				ThemeHelper::UpdateSecondaryColorFromTheme(user);
-				RequestBackgroundReload(GetBgPath(user->style.bg_theme), settings, user);
-				std::thread(BgReloadWorker).detach();
-			}
-			break;
-		}
+                        if (user->style.bg_theme != BgTheme::BLACK)
+                        {
+                                user->style.bg_theme = BgTheme::BLACK;
+                                ThemeHelper::UpdateSecondaryColorFromTheme(user);
+                                RequestBackgroundReload(GetBgPath(user->style.bg_theme), settings, user);
+                                DebugLog("Frame %llu: requested BLACK background reload", (unsigned long long)frameIndex);
+                                std::thread(BgReloadWorker).detach();
+                        }
+                        break;
+                }
 		case 1:
 		{
-			if (user->style.bg_theme != BgTheme::PURPLE)
-			{
-				user->style.bg_theme = BgTheme::PURPLE;
-				ThemeHelper::UpdateSecondaryColorFromTheme(user);
-				RequestBackgroundReload(GetBgPath(user->style.bg_theme), settings, user);
-				std::thread(BgReloadWorker).detach();
-			}
-			break;
-		}
+                        if (user->style.bg_theme != BgTheme::PURPLE)
+                        {
+                                user->style.bg_theme = BgTheme::PURPLE;
+                                ThemeHelper::UpdateSecondaryColorFromTheme(user);
+                                RequestBackgroundReload(GetBgPath(user->style.bg_theme), settings, user);
+                                DebugLog("Frame %llu: requested PURPLE background reload", (unsigned long long)frameIndex);
+                                std::thread(BgReloadWorker).detach();
+                        }
+                        break;
+                }
 		case 2:
 		{
-			if (user->style.bg_theme != BgTheme::YELLOW)
-			{
-				user->style.bg_theme = BgTheme::YELLOW;
-				ThemeHelper::UpdateSecondaryColorFromTheme(user);
-				RequestBackgroundReload(GetBgPath(user->style.bg_theme), settings, user);
-				std::thread(BgReloadWorker).detach();
-			}
-			break;
-		}
+                        if (user->style.bg_theme != BgTheme::YELLOW)
+                        {
+                                user->style.bg_theme = BgTheme::YELLOW;
+                                ThemeHelper::UpdateSecondaryColorFromTheme(user);
+                                RequestBackgroundReload(GetBgPath(user->style.bg_theme), settings, user);
+                                DebugLog("Frame %llu: requested YELLOW background reload", (unsigned long long)frameIndex);
+                                std::thread(BgReloadWorker).detach();
+                        }
+                        break;
+                }
 		case 3:
 		{
-			if (user->style.bg_theme != BgTheme::BLUE)
-			{
-				user->style.bg_theme = BgTheme::BLUE;
-				ThemeHelper::UpdateSecondaryColorFromTheme(user);
-				RequestBackgroundReload(GetBgPath(user->style.bg_theme), settings, user);
-				std::thread(BgReloadWorker).detach();
-			}
-			break;
-		}
+                        if (user->style.bg_theme != BgTheme::BLUE)
+                        {
+                                user->style.bg_theme = BgTheme::BLUE;
+                                ThemeHelper::UpdateSecondaryColorFromTheme(user);
+                                RequestBackgroundReload(GetBgPath(user->style.bg_theme), settings, user);
+                                DebugLog("Frame %llu: requested BLUE background reload", (unsigned long long)frameIndex);
+                                std::thread(BgReloadWorker).detach();
+                        }
+                        break;
+                }
 		case 4:
 		{
-			if (user->style.bg_theme != BgTheme::GREEN)
-			{
-				user->style.bg_theme = BgTheme::GREEN;
-				ThemeHelper::UpdateSecondaryColorFromTheme(user);
-				RequestBackgroundReload(GetBgPath(user->style.bg_theme), settings, user);
-				std::thread(BgReloadWorker).detach();
-			}
-			break;
-		}
+                        if (user->style.bg_theme != BgTheme::GREEN)
+                        {
+                                user->style.bg_theme = BgTheme::GREEN;
+                                ThemeHelper::UpdateSecondaryColorFromTheme(user);
+                                RequestBackgroundReload(GetBgPath(user->style.bg_theme), settings, user);
+                                DebugLog("Frame %llu: requested GREEN background reload", (unsigned long long)frameIndex);
+                                std::thread(BgReloadWorker).detach();
+                        }
+                        break;
+                }
 		case 5:
 		{
-			if (user->style.bg_theme != BgTheme::RED)
-			{
-				user->style.bg_theme = BgTheme::RED;
-				ThemeHelper::UpdateSecondaryColorFromTheme(user);
-				RequestBackgroundReload(GetBgPath(user->style.bg_theme), settings, user);
-				std::thread(BgReloadWorker).detach();
-			}
-			break;
-		}
+                        if (user->style.bg_theme != BgTheme::RED)
+                        {
+                                user->style.bg_theme = BgTheme::RED;
+                                ThemeHelper::UpdateSecondaryColorFromTheme(user);
+                                RequestBackgroundReload(GetBgPath(user->style.bg_theme), settings, user);
+                                DebugLog("Frame %llu: requested RED background reload", (unsigned long long)frameIndex);
+                                std::thread(BgReloadWorker).detach();
+                        }
+                        break;
+                }
 		}
 		switch (settings->themecombos.LoadingThemeIdx)
 		{
