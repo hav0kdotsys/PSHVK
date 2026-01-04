@@ -627,7 +627,7 @@ bool TextureLoader::ReloadBackgroundTexture(const std::wstring& newPath)
         return true;
 }
 
-static void RequestBackgroundReload(const std::wstring& newPath)
+static void RequestBackgroundReload(const std::wstring& newPath, c_settings* appSettings, c_usersettings* appUser)
 {
 	{
 		std::lock_guard<std::mutex> lock(g_bgJob.mtx);
@@ -645,15 +645,14 @@ static void RequestBackgroundReload(const std::wstring& newPath)
 	g_bgJob.new_cpu = { 0 };
 	g_bgJob.new_gpu = { 0 };
 
-
 	// cache vsync and fps values
-	g_App.Lcache.vsync = settings->vsync;
-	g_App.Lcache.target_fps = user->render.target_fps;
+	g_App.Lcache.vsync = appSettings->vsync;
+	g_App.Lcache.target_fps = appUser->render.target_fps;
 
 	// front-end transition ON immediately
-	settings->vsync = false;
-	user->render.target_fps = 60;
-	settings->isLoading = true;
+	appSettings->vsync = false;
+	appUser->render.target_fps = 60;
+	appSettings->isLoading = true;
 }
 
 
@@ -1366,7 +1365,7 @@ void ApplyRenderSettings()
 		lastBg = user->render.bg_image_path;
 
 		// whatever function you already use to reload bg textures
-		RequestBackgroundReload(user->render.bg_image_path);
+		RequestBackgroundReload(user->render.bg_image_path, settings, user);
 	}
 
 	if (lastLoading != user->style.loading_theme)
@@ -1807,7 +1806,7 @@ int main(int, char**)
 			{
 				user->style.bg_theme = BgTheme::BLACK;
 				ThemeHelper::UpdateSecondaryColorFromTheme(user);
-				RequestBackgroundReload(GetBgPath(user->style.bg_theme));
+				RequestBackgroundReload(GetBgPath(user->style.bg_theme), settings, user);
 				std::thread(BgReloadWorker).detach();
 			}
 			break;
@@ -1818,7 +1817,7 @@ int main(int, char**)
 			{
 				user->style.bg_theme = BgTheme::PURPLE;
 				ThemeHelper::UpdateSecondaryColorFromTheme(user);
-				RequestBackgroundReload(GetBgPath(user->style.bg_theme));
+				RequestBackgroundReload(GetBgPath(user->style.bg_theme), settings, user);
 				std::thread(BgReloadWorker).detach();
 			}
 			break;
@@ -1829,7 +1828,7 @@ int main(int, char**)
 			{
 				user->style.bg_theme = BgTheme::YELLOW;
 				ThemeHelper::UpdateSecondaryColorFromTheme(user);
-				RequestBackgroundReload(GetBgPath(user->style.bg_theme));
+				RequestBackgroundReload(GetBgPath(user->style.bg_theme), settings, user);
 				std::thread(BgReloadWorker).detach();
 			}
 			break;
@@ -1840,7 +1839,7 @@ int main(int, char**)
 			{
 				user->style.bg_theme = BgTheme::BLUE;
 				ThemeHelper::UpdateSecondaryColorFromTheme(user);
-				RequestBackgroundReload(GetBgPath(user->style.bg_theme));
+				RequestBackgroundReload(GetBgPath(user->style.bg_theme), settings, user);
 				std::thread(BgReloadWorker).detach();
 			}
 			break;
@@ -1851,7 +1850,7 @@ int main(int, char**)
 			{
 				user->style.bg_theme = BgTheme::GREEN;
 				ThemeHelper::UpdateSecondaryColorFromTheme(user);
-				RequestBackgroundReload(GetBgPath(user->style.bg_theme));
+				RequestBackgroundReload(GetBgPath(user->style.bg_theme), settings, user);
 				std::thread(BgReloadWorker).detach();
 			}
 			break;
@@ -1862,13 +1861,12 @@ int main(int, char**)
 			{
 				user->style.bg_theme = BgTheme::RED;
 				ThemeHelper::UpdateSecondaryColorFromTheme(user);
-				RequestBackgroundReload(GetBgPath(user->style.bg_theme));
+				RequestBackgroundReload(GetBgPath(user->style.bg_theme), settings, user);
 				std::thread(BgReloadWorker).detach();
 			}
 			break;
 		}
 		}
-
 		switch (settings->themecombos.LoadingThemeIdx)
 		{
 		case 0:
@@ -2272,9 +2270,9 @@ int main(int, char**)
 						L"Images (*.png;*.jpg;*.jpeg)\0*.png;*.jpg;*.jpeg\0"))
 					{
 						user->render.bg_image_path = bgPath;
-						RequestBackgroundReload(bgPath);
+						RequestBackgroundReload(bgPath, settings, user);
 						std::thread(BgReloadWorker).detach();
-					}
+						}
 
 					ImGui::Spacing(20.0f);
 
