@@ -12,6 +12,8 @@
 *.user
 *.userosscache
 *.sln.docstates
+*.DB
+*.db
 
 # Build and compiler outputs
 build/

@@ -63,6 +63,14 @@ static void DebugLog(const char* fmt, ...)
         OutputDebugStringA(buffer);
         OutputDebugStringA("\n");
         printf("%s\n", buffer);
+
+		FILE* logFile = nullptr;
+		fopen_s(&logFile, "debug.hvklog", "a");
+		if (logFile)
+		{
+			fprintf(logFile, "%s\n", buffer);
+			fclose(logFile);
+		}
 }
 #else
 #define DebugLog(...) (void)0
