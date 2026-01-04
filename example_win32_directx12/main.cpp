@@ -412,6 +412,14 @@ static std::mutex                 g_dx12UploadMutex;
 // Keep DX12 texture resources alive (your current code never releases them anyway)
 static std::vector<ID3D12Resource*> g_dx12LiveTextures;
 
+static ID3D11Device* g_pd3dDevice11 = nullptr;
+static ID3D11DeviceContext* g_pd3dDeviceContext11 = nullptr;
+static IDXGISwapChain* g_pSwapChain11 = nullptr;
+static ID3D11RenderTargetView* g_mainRenderTargetView11 = nullptr;
+static GlowPipelineDX12 g_GlowPipeline12;
+static GlowPipelineDX11 g_GlowPipeline11;
+static GlowSettings g_GlowSettings;
+
 static bool LoadTextureUnified(const wchar_t* path, HVKTexture& outTex)
 {
         if (g_App.g_RenderBackend == RenderBackend::DX12)
@@ -426,45 +434,14 @@ static bool LoadTextureUnified(const wchar_t* path, HVKTexture& outTex)
         }
         else
         {
-                // DX11 path
-static ID3D11Device* g_pd3dDevice11 = nullptr;
-static ID3D11DeviceContext* g_pd3dDeviceContext11 = nullptr;
-static IDXGISwapChain* g_pSwapChain11 = nullptr;
-static ID3D11RenderTargetView* g_mainRenderTargetView11 = nullptr;
-static GlowPipelineDX12 g_GlowPipeline12;
-static GlowPipelineDX11 g_GlowPipeline11;
-static GlowSettings g_GlowSettings;
-static bool LoadTextureUnified(const wchar_t* path, HVKTexture& outTex)
-{
-	if (g_App.g_RenderBackend == RenderBackend::DX12)
-	{
-		// DX12 path – wrap the old function
-		ImTextureID id = TextureLoader::LoadTexture(
-			path,
-			g_pd3dDevice,
-			g_pd3dCommandList,
-			g_pd3dSrvDescHeapAlloc
-		);
-
-		if (!id)
-			return false;
-
-		outTex.id = id;
-		return true;
-	}
-	else
-	{
-		// DX11 path
-		return TextureLoader::LoadTextureDX11FromFile(
-			g_pd3dDevice11,
-			g_pd3dDeviceContext11,
-			path,
-			outTex
-		);
-	}
+                return TextureLoader::LoadTextureDX11FromFile(
+                        g_pd3dDevice11,
+                        g_pd3dDeviceContext11,
+                        path,
+                        outTex
+                );
+        }
 }
-
-
 
 
 // Forward declarations of helper functions
