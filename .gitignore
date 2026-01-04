@@ -63,3 +63,10 @@ Testing/
 .DS_Store
 Thumbs.db
 .vscode/.BROWSE.VC.DB
+.vscode/.BROWSE.VC.DB
+obj/x64/Dev/main.obj
+obj/x64/Dev/texhelper.obj
+obj/x64/Dev/vc145.pdb
+obj/x64/Dev/Menu Base.tlog/CL.command.1.tlog
+obj/x64/Dev/Menu Base.tlog/CL.read.1.tlog
+obj/x64/Dev/Menu Base.tlog/CL.write.1.tlog
