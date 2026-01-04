@@ -203,7 +203,9 @@ set "CONFIG_NAME=%~1"
 echo ========================================
 echo Building: %CONFIG_NAME% x64
 echo ========================================
-"%MSBUILD_PATH%" "Menu Base.vcxproj" /t:Build %MSBUILD_VERBOSITY% /p:Configuration=%CONFIG_NAME% /p:Platform=x64 /p:VcpkgEnabled=true /p:CL=/FS /m
+set "EXTRA_MSBUILD_PROPS="
+if /i "%CONFIG_NAME%"=="Debug" set "EXTRA_MSBUILD_PROPS=/p:RuntimeLibrary=MultiThreadedDebugDLL"
+"%MSBUILD_PATH%" "Menu Base.vcxproj" /t:Build %MSBUILD_VERBOSITY% /p:Configuration=%CONFIG_NAME% /p:Platform=x64 /p:VcpkgEnabled=true /p:CL=/FS %EXTRA_MSBUILD_PROPS% /m
 if errorlevel 1 (
     exit /b 1
 )
