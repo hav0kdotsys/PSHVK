@@ -1848,7 +1848,7 @@ int main(int, char**)
 			<< "SER=" << sig.serial << "\n"
 			<< "MFG=" << sig.manufacturer << "\n"
 			<< "PROD=" << sig.product << "\n"
-			<< "RIDH=" << sig.reportedIdHash << "\n";
+			<< "RIDH=" << sig.reportedIdHash << "\n\n";
 
 	}
 	catch(std::exception e)

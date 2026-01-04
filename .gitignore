@@ -130,3 +130,15 @@ obj/x64/Release/x64/Menu Base.tlog/link.read.1.tlog
 obj/x64/Release/x64/Menu Base.tlog/link.secondary.1.tlog
 obj/x64/Release/x64/Menu Base.tlog/link.write.1.tlog
 obj/x64/Release/x64/Menu Base.tlog/Menu Base.write.1u.tlog
+.vscode/.BROWSE.VC.DB
+obj/x64/Dev/main.obj
+obj/x64/Dev/Menu Base.vcxproj.FileListAbsolute.txt
+obj/x64/Dev/PSHVK_Dev.iobj
+obj/x64/Dev/PSHVK_Dev.ipdb
+obj/x64/Dev/vc145.pdb
+obj/x64/Dev/Menu Base.tlog/CL.read.1.tlog
+obj/x64/Dev/Menu Base.tlog/link.read.1.tlog
+obj/x64/Dev/Menu Base.tlog/Menu Base.write.1u.tlog
+.vscode/.BROWSE.VC.DB
+bin/x64/Dev/PSHVK_Dev.pdb
+obj/x64/Dev/main.obj
