@@ -1924,7 +1924,7 @@ int main(int, char**)
                 DebugLog("Frame %llu: before ImGui::UpdateStyle", (unsigned long long)frameIndex);
                 ImGui::UpdateStyle(*user, style);
                 DebugLog("Frame %llu: after ImGui::UpdateStyle", (unsigned long long)frameIndex);
-                PollSettingsHotReload();
+                // PollSettingsHotReload();
 
 		switch (settings->themecombos.BgThemeIdx)
 		{
