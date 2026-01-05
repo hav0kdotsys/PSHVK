@@ -1922,8 +1922,25 @@ int main(int, char**)
                 FinalizeBgUploadIfReady();
 
                 DebugLog("Frame %llu: before ImGui::UpdateStyle", (unsigned long long)frameIndex);
-                ImGui::UpdateStyle(*user, style);
+                bool fonts_rebuilt = ImGui::UpdateStyle(*user, style);
                 DebugLog("Frame %llu: after ImGui::UpdateStyle", (unsigned long long)frameIndex);
+                if (fonts_rebuilt)
+                {
+                        DebugLog("Frame %llu: fonts rebuilt, recreating backend font texture", (unsigned long long)frameIndex);
+                        if (g_App.g_RenderBackend == RenderBackend::DX12)
+                        {
+                                // Ensure the GPU is idle before destroying/creating font resources
+                                // to avoid referencing released descriptors/texture in flight.
+                                WaitForPendingOperations();
+                                ImGui_ImplDX12_InvalidateDeviceObjects();
+                                ImGui_ImplDX12_CreateDeviceObjects();
+                        }
+                        else
+                        {
+                                ImGui_ImplDX11_InvalidateDeviceObjects();
+                                ImGui_ImplDX11_CreateDeviceObjects();
+                        }
+                }
                 // PollSettingsHotReload();
 
                 DebugLog("Frame %llu: after PollSettingsHotReload", (unsigned long long)frameIndex);

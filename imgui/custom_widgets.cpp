@@ -1254,7 +1254,7 @@ namespace ImGui {
 
 
 
-	bool UpdateStyle(c_usersettings& user, ImGuiStyle& style) {
+        bool UpdateStyle(c_usersettings& user, ImGuiStyle& style) {
 
 		style.Colors[ImGuiCol_WindowBg].x = (float)user.style.main_bg_color.x;
 		style.Colors[ImGuiCol_WindowBg].y = (float)user.style.main_bg_color.y;
@@ -1296,7 +1296,8 @@ namespace ImGui {
 		style.Colors[ImGuiCol_SliderGrab] = ImVec4(0.4f, 0.4f, 0.4f, 1.0f);
 		style.Colors[ImGuiCol_SliderGrabActive] = ImVec4(0.5f, 0.5f, 0.5f, 1.0f);
 
-		static float last_applied = 1.0f;
+                static float last_applied = 1.0f;
+                bool fonts_rebuilt = false;
 		float desired = user.style.dpi_scale * user.style.ui_scale;
 
 		ImGuiIO& io = ImGui::GetIO();
@@ -1307,10 +1308,12 @@ namespace ImGui {
                 std::string satoshiBoldPath = base + "satoshi\\Satoshi-Bold.otf";
                 std::string proggyPath = base + "proggy_clean\\ProggyClean.ttf";
 
-		if (fabsf(desired - last_applied) > 0.001f)
-		{
-			style.ScaleAllSizes(desired / last_applied);
-			last_applied = desired;
+                if (fabsf(desired - last_applied) > 0.001f)
+                {
+                        style.ScaleAllSizes(desired / last_applied);
+                        last_applied = desired;
+
+                        fonts_rebuilt = true;
 
 			// Use 13px as base to match ImGui's default font size for consistent spacing
 			float baseFontSize = 13.0f;
@@ -1391,12 +1394,12 @@ namespace ImGui {
 
                         // Set satoshi regular as the default font for the menu
                         io.FontDefault = user.style.satoshi_regular;
-		}
+                }
 
 
 
-		return true;
-	}
+                return fonts_rebuilt;
+        }
 
 	void Spacing(float height)
 	{
