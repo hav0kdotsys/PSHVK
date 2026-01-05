@@ -1301,10 +1301,11 @@ namespace ImGui {
 
 		ImGuiIO& io = ImGui::GetIO();
 
-		const std::string base = HVKIO::GetLocalAppData() + "\\PSHVK\\assets\\fonts\\";
-		std::string satoshiMediumPath = base + "satoshi\\Satoshi-Medium.otf";
-		std::string satoshiBoldPath = base + "satoshi\\Satoshi-Bold.otf";
-		std::string proggyPath = base + "proggy_clean\\ProggyClean.ttf";
+                const std::string base = HVKIO::GetLocalAppData() + "\\PSHVK\\assets\\fonts\\";
+                std::string satoshiRegularPath = base + "satoshi\\Satoshi-Regular.otf";
+                std::string satoshiMediumPath = base + "satoshi\\Satoshi-Medium.otf";
+                std::string satoshiBoldPath = base + "satoshi\\Satoshi-Bold.otf";
+                std::string proggyPath = base + "proggy_clean\\ProggyClean.ttf";
 
 		if (fabsf(desired - last_applied) > 0.001f)
 		{
@@ -1316,64 +1317,80 @@ namespace ImGui {
 			// Handle ui_scale being 0.0 (default) by using 1.0 as fallback
 			float fontSize = baseFontSize * (user.style.ui_scale > 0.0f ? user.style.ui_scale : 1.0f);
 
-			io.Fonts->Clear();
-			
-			// Load Satoshi Medium font with error handling
-			ImFontConfig satoshiMediumConfig;
-			satoshiMediumConfig.Flags |= ImFontFlags_NoLoadError;
-			user.style.satoshi_medium = io.Fonts->AddFontFromFileTTF(satoshiMediumPath.c_str(), fontSize, &satoshiMediumConfig);
-			if (!user.style.satoshi_medium)
-			{
-				printf("[FONT] UpdateStyle: Failed to load Satoshi Medium font from: %s\n", satoshiMediumPath.c_str());
-				// Fallback to default font if Satoshi fails to load
-				ImFontConfig defaultConfig;
-				defaultConfig.SizePixels = fontSize;
-				user.style.satoshi_medium = io.Fonts->AddFontDefault(&defaultConfig);
-				printf("[FONT] UpdateStyle: Using default font as fallback for Satoshi Medium\n");
-			}
-			else
-			{
-				printf("[FONT] UpdateStyle: Successfully loaded Satoshi Medium font from: %s\n", satoshiMediumPath.c_str());
-			}
-			
-			// Load Satoshi Bold font with error handling
-			ImFontConfig satoshiBoldConfig;
-			satoshiBoldConfig.Flags |= ImFontFlags_NoLoadError;
-			user.style.satoshi_bold = io.Fonts->AddFontFromFileTTF(satoshiBoldPath.c_str(), fontSize, &satoshiBoldConfig);
-			if (!user.style.satoshi_bold)
-			{
-				printf("[FONT] UpdateStyle: Failed to load Satoshi Bold font from: %s\n", satoshiBoldPath.c_str());
-				// Fallback to Satoshi Medium if Bold fails to load
-				user.style.satoshi_bold = user.style.satoshi_medium;
-				printf("[FONT] UpdateStyle: Using Satoshi Medium as fallback for Satoshi Bold\n");
-			}
-			else
-			{
-				printf("[FONT] UpdateStyle: Successfully loaded Satoshi Bold font from: %s\n", satoshiBoldPath.c_str());
-			}
-			
-			// Load Proggy font with error handling
-			ImFontConfig proggyConfig;
-			proggyConfig.Flags |= ImFontFlags_NoLoadError;
-			user.style.proggy_clean = io.Fonts->AddFontFromFileTTF(proggyPath.c_str(), fontSize, &proggyConfig);
-			if (!user.style.proggy_clean)
-			{
-				printf("[FONT] UpdateStyle: Failed to load Proggy font from: %s\n", proggyPath.c_str());
-				// Fallback to default font if Proggy fails to load
-				ImFontConfig defaultConfig;
-				defaultConfig.SizePixels = fontSize;
-				user.style.proggy_clean = io.Fonts->AddFontDefault(&defaultConfig);
-				printf("[FONT] UpdateStyle: Using default font as fallback for Proggy\n");
-			}
-			else
-			{
-				printf("[FONT] UpdateStyle: Successfully loaded Proggy font from: %s\n", proggyPath.c_str());
-			}
-			
-			io.Fonts->Build();
+                        io.Fonts->Clear();
 
-			// Set satoshi regular as the default font for the menu
-			io.FontDefault = user.style.satoshi_regular;
+                        // Load Satoshi Regular font with error handling
+                        ImFontConfig satoshiRegularConfig;
+                        satoshiRegularConfig.Flags |= ImFontFlags_NoLoadError;
+                        user.style.satoshi_regular = io.Fonts->AddFontFromFileTTF(satoshiRegularPath.c_str(), fontSize, &satoshiRegularConfig);
+                        if (!user.style.satoshi_regular)
+                        {
+                                printf("[FONT] UpdateStyle: Failed to load Satoshi Regular font from: %s\n", satoshiRegularPath.c_str());
+                                // Fallback to default font if Satoshi Regular fails to load
+                                ImFontConfig defaultConfig;
+                                defaultConfig.SizePixels = fontSize;
+                                user.style.satoshi_regular = io.Fonts->AddFontDefault(&defaultConfig);
+                                printf("[FONT] UpdateStyle: Using default font as fallback for Satoshi Regular\n");
+                        }
+                        else
+                        {
+                                printf("[FONT] UpdateStyle: Successfully loaded Satoshi Regular font from: %s\n", satoshiRegularPath.c_str());
+                        }
+
+                        // Load Satoshi Medium font with error handling
+                        ImFontConfig satoshiMediumConfig;
+                        satoshiMediumConfig.Flags |= ImFontFlags_NoLoadError;
+                        user.style.satoshi_medium = io.Fonts->AddFontFromFileTTF(satoshiMediumPath.c_str(), fontSize, &satoshiMediumConfig);
+                        if (!user.style.satoshi_medium)
+                        {
+                                printf("[FONT] UpdateStyle: Failed to load Satoshi Medium font from: %s\n", satoshiMediumPath.c_str());
+                                // Fallback to default font if Satoshi fails to load
+                                user.style.satoshi_medium = user.style.satoshi_regular;
+                                printf("[FONT] UpdateStyle: Using Satoshi Regular as fallback for Satoshi Medium\n");
+                        }
+                        else
+                        {
+                                printf("[FONT] UpdateStyle: Successfully loaded Satoshi Medium font from: %s\n", satoshiMediumPath.c_str());
+                        }
+
+                        // Load Satoshi Bold font with error handling
+                        ImFontConfig satoshiBoldConfig;
+                        satoshiBoldConfig.Flags |= ImFontFlags_NoLoadError;
+                        user.style.satoshi_bold = io.Fonts->AddFontFromFileTTF(satoshiBoldPath.c_str(), fontSize, &satoshiBoldConfig);
+                        if (!user.style.satoshi_bold)
+                        {
+                                printf("[FONT] UpdateStyle: Failed to load Satoshi Bold font from: %s\n", satoshiBoldPath.c_str());
+                                // Fallback to Satoshi Medium if Bold fails to load
+                                user.style.satoshi_bold = user.style.satoshi_medium;
+                                printf("[FONT] UpdateStyle: Using Satoshi Medium as fallback for Satoshi Bold\n");
+                        }
+                        else
+                        {
+                                printf("[FONT] UpdateStyle: Successfully loaded Satoshi Bold font from: %s\n", satoshiBoldPath.c_str());
+                        }
+
+                        // Load Proggy font with error handling
+                        ImFontConfig proggyConfig;
+                        proggyConfig.Flags |= ImFontFlags_NoLoadError;
+                        user.style.proggy_clean = io.Fonts->AddFontFromFileTTF(proggyPath.c_str(), fontSize, &proggyConfig);
+                        if (!user.style.proggy_clean)
+                        {
+                                printf("[FONT] UpdateStyle: Failed to load Proggy font from: %s\n", proggyPath.c_str());
+                                // Fallback to default font if Proggy fails to load
+                                ImFontConfig defaultConfig;
+                                defaultConfig.SizePixels = fontSize;
+                                user.style.proggy_clean = io.Fonts->AddFontDefault(&defaultConfig);
+                                printf("[FONT] UpdateStyle: Using default font as fallback for Proggy\n");
+                        }
+                        else
+                        {
+                                printf("[FONT] UpdateStyle: Successfully loaded Proggy font from: %s\n", proggyPath.c_str());
+                        }
+
+                        io.Fonts->Build();
+
+                        // Set satoshi regular as the default font for the menu
+                        io.FontDefault = user.style.satoshi_regular;
 		}
 
 
