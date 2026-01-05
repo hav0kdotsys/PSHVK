@@ -1926,10 +1926,12 @@ int main(int, char**)
                 DebugLog("Frame %llu: after ImGui::UpdateStyle", (unsigned long long)frameIndex);
                 PollSettingsHotReload();
 
-		switch (settings->themecombos.BgThemeIdx)
-		{
-		case 0:
-		{
+                DebugLog("Frame %llu: after PollSettingsHotReload", (unsigned long long)frameIndex);
+
+                switch (settings->themecombos.BgThemeIdx)
+                {
+                case 0:
+                {
                         if (user->style.bg_theme != BgTheme::BLACK)
                         {
                                 user->style.bg_theme = BgTheme::BLACK;
@@ -2000,12 +2002,15 @@ int main(int, char**)
                         }
                         break;
                 }
-		}
-		switch (settings->themecombos.LoadingThemeIdx)
-		{
-		case 0:
-		{
-			if (user->style.loading_theme != LoadingTheme::DARKMODE)
+                }
+
+                DebugLog("Frame %llu: after background theme selection", (unsigned long long)frameIndex);
+
+                switch (settings->themecombos.LoadingThemeIdx)
+                {
+                case 0:
+                {
+                        if (user->style.loading_theme != LoadingTheme::DARKMODE)
 			{
 				user->style.loading_theme = LoadingTheme::DARKMODE;
 				SwapLoadingIconTheme(user->style.loading_theme);
@@ -2019,18 +2024,22 @@ int main(int, char**)
 				user->style.loading_theme = LoadingTheme::LIGHTMODE;
 				SwapLoadingIconTheme(user->style.loading_theme);
 			}
-			break;
-		}
-		}
+                        break;
+                }
+                }
 
-		// Start the Dear ImGui frame
-		if (g_App.g_RenderBackend == RenderBackend::DX12)
-			ImGui_ImplDX12_NewFrame();
-		else
-			ImGui_ImplDX11_NewFrame();
+                DebugLog("Frame %llu: after loading theme selection", (unsigned long long)frameIndex);
 
-		ImGui_ImplWin32_NewFrame();
-		ImGui::NewFrame();
+                // Start the Dear ImGui frame
+                DebugLog("Frame %llu: before backend NewFrame", (unsigned long long)frameIndex);
+                if (g_App.g_RenderBackend == RenderBackend::DX12)
+                        ImGui_ImplDX12_NewFrame();
+                else
+                        ImGui_ImplDX11_NewFrame();
+
+                ImGui_ImplWin32_NewFrame();
+                ImGui::NewFrame();
+                DebugLog("Frame %llu: after ImGui::NewFrame", (unsigned long long)frameIndex);
 
 
 		if (GetAsyncKeyState(VK_F7) & 1)
@@ -2047,16 +2056,17 @@ int main(int, char**)
 			if (GetAsyncKeyState(user->binds.toggle_dev) & 1)
 				settings->visibility.win_dev = !settings->visibility.win_dev;
 
-			if (GetAsyncKeyState(user->binds.shutdown) & 1)
-				done = true;
+                        if (GetAsyncKeyState(user->binds.shutdown) & 1)
+                                done = true;
 
-			if (BgTexture)
-			{
-				bg->AddImage(
-					BgTexture,
-					ImVec2(0, 0),
-					ImVec2(io.DisplaySize.x, io.DisplaySize.y));
-			}
+                        if (BgTexture)
+                        {
+                                bg->AddImage(
+                                        BgTexture,
+                                        ImVec2(0, 0),
+                                        ImVec2(io.DisplaySize.x, io.DisplaySize.y));
+                                DebugLog("Frame %llu: drew background image", (unsigned long long)frameIndex);
+                        }
 			float cpu = g_Sys.GetCPUUsage();
 			uint64_t used = g_Sys.GetGPUMemoryUsed() / (1024 * 1024);
 			uint64_t total = g_Sys.GetGPUMemoryTotal() / (1024 * 1024);
@@ -2257,10 +2267,10 @@ int main(int, char**)
 						if (ImGui::ModernStyle::ModernButton("Import User Settings"))
 							user->ImportFromHvk(base + L"usersettings.hvk");
 
-						break;
-					}
-					case 3:
-					{
+                                                break;
+                                        }
+                                        case 3:
+                                        {
 						ImGui::Text("Themes");
 						ImGui::Spacing();
 						ImGui::ModernStyle::ModernCombo("Loading Theme", &settings->themecombos.LoadingThemeIdx, "Dark\0Light\0");
@@ -2284,9 +2294,9 @@ int main(int, char**)
 						ImGui::Spacing();
 						ImGui::ModernStyle::ModernColorEdit3("Background Color##Watermark", (float*)&user->style.wm_bg_color);
 						ImGui::ModernStyle::ModernColorEdit3("Text Color##Watermark", (float*)&user->style.wm_text_color);
-						ImGui::ModernStyle::ModernSliderFloat("Opacity##Watermark", &user->style.wm_opacity, 0.0f, 1.0f, "%.2f");
+                                                ImGui::ModernStyle::ModernSliderFloat("Opacity##Watermark", &user->style.wm_opacity, 0.0f, 1.0f, "%.2f");
 
-						ImGui::Spacing(12.0f);
+                                                ImGui::Spacing(12.0f);
 						ImGui::Separator();
 						ImGui::Spacing(12.0f);
 
@@ -2422,17 +2432,18 @@ int main(int, char**)
 					ImGui::Text(HVKIO::ValidateInstanceFile() ? "Valid Signature: Yes" : "Valid Signature: No");
 
 				}
-				ImGui::End();
-			}
-		}
+                                ImGui::End();
+                        }
+                }
 
-		
+                DebugLog("Frame %llu: finished non-loading UI branch", (unsigned long long)frameIndex);
 
-		if (settings->isLoading)
-		{
-			ImTextureID tex = (ImTextureID)nullptr;
-			if (g_texturesReady.load() && !g_LoadingFrames.empty())
-			{
+                DebugLog("Frame %llu: before loading screen branch", (unsigned long long)frameIndex);
+                if (settings->isLoading)
+                {
+                        ImTextureID tex = (ImTextureID)nullptr;
+                        if (g_texturesReady.load() && !g_LoadingFrames.empty())
+                        {
 				const int endIdx = (int)g_LoadingFrames.size() - 1;
 				tex = TextureLoader::CycleFrames(g_LoadingFrames, 0, endIdx);
 			}
@@ -2441,11 +2452,12 @@ int main(int, char**)
 
 			const bool isLight = (user->style.loading_theme == LoadingTheme::LIGHTMODE);
 
-			bg->AddRectFilled(
-				ImVec2(0, 0),
-				ImVec2(io.DisplaySize.x, io.DisplaySize.y),
-				isLight ? IM_COL32(255, 255, 255, 255) : IM_COL32(0, 0, 0, 255)
-			);
+                        bg->AddRectFilled(
+                                ImVec2(0, 0),
+                                ImVec2(io.DisplaySize.x, io.DisplaySize.y),
+                                isLight ? IM_COL32(255, 255, 255, 255) : IM_COL32(0, 0, 0, 255)
+                        );
+                        DebugLog("Frame %llu: drew loading screen background", (unsigned long long)frameIndex);
 
 
 
@@ -2462,23 +2474,28 @@ int main(int, char**)
 			float cy = io.DisplaySize.y * 0.5f;
 
 
-			if (tex)
-			{
-				bg->AddImage(
-					tex,
-					ImVec2(cx - w * 0.5f, cy - h * 0.5f),
-					ImVec2(cx + w * 0.5f, cy + h * 0.5f)
-				);
-			}
+                        if (tex)
+                        {
+                                bg->AddImage(
+                                        tex,
+                                        ImVec2(cx - w * 0.5f, cy - h * 0.5f),
+                                        ImVec2(cx + w * 0.5f, cy + h * 0.5f)
+                                );
+                                DebugLog("Frame %llu: drew loading animation frame", (unsigned long long)frameIndex);
+                        }
 
-			// printf("Scale: %.2f\n", scale);
-		}
+                        // printf("Scale: %.2f\n", scale);
+                }
 
-		// Rendering
+                DebugLog("Frame %llu: before ImGui::Render", (unsigned long long)frameIndex);
+
+                // Rendering
                 ImGui::Render();
+                DebugLog("Frame %llu: after ImGui::Render", (unsigned long long)frameIndex);
 
                 if (g_App.g_RenderBackend == RenderBackend::DX12)
                 {
+                        DebugLog("Frame %llu: entering DX12 render path", (unsigned long long)frameIndex);
                         g_GlowPipeline12.Resize(g_pd3dDevice, (int)io.DisplaySize.x, (int)io.DisplaySize.y);
                         FrameContext* frameCtx = WaitForNextFrameContext();
                         TextureLoader::ProcessDeferredTextureFrees();
@@ -2510,17 +2527,20 @@ int main(int, char**)
 			g_pd3dCommandQueue->Signal(g_fence, ++g_fenceLastSignaledValue);
 			frameCtx->FenceValue = g_fenceLastSignaledValue;
 
-			HRESULT hr;
-			if (settings->vsync)
-				hr = g_pSwapChain->Present(1, 0);
-			else
-				hr = g_pSwapChain->Present(0, g_SwapChainTearingSupport ? DXGI_PRESENT_ALLOW_TEARING : 0);
+                        HRESULT hr;
+                        if (settings->vsync)
+                                hr = g_pSwapChain->Present(1, 0);
+                        else
+                                hr = g_pSwapChain->Present(0, g_SwapChainTearingSupport ? DXGI_PRESENT_ALLOW_TEARING : 0);
 
-			g_SwapChainOccluded = (hr == DXGI_STATUS_OCCLUDED);
-			g_frameIndex++;
-		}
+                        DebugLog("Frame %llu: DX12 Present hr=0x%08lx", (unsigned long long)frameIndex, (unsigned long)hr);
+
+                        g_SwapChainOccluded = (hr == DXGI_STATUS_OCCLUDED);
+                        g_frameIndex++;
+                }
                 else
                 {
+                        DebugLog("Frame %llu: entering DX11 render path", (unsigned long long)frameIndex);
                         g_GlowPipeline11.Resize(g_pd3dDevice11, (int)io.DisplaySize.x, (int)io.DisplaySize.y);
                         const float clear_color_with_alpha[4] = { clear_color.x * clear_color.w, clear_color.y * clear_color.w, clear_color.z * clear_color.w, clear_color.w };
                         g_pd3dDeviceContext11->OMSetRenderTargets(1, &g_mainRenderTargetView11, nullptr);
@@ -2529,6 +2549,7 @@ int main(int, char**)
                         g_GlowPipeline11.Render(g_pd3dDeviceContext11, ImGui::GetDrawData(), g_mainRenderTargetView11, io.DisplaySize, g_GlowSettings);
 
                         g_pSwapChain11->Present(settings->vsync ? 1 : 0, 0);
+                        DebugLog("Frame %llu: DX11 Present completed", (unsigned long long)frameIndex);
                 }
 
 		if (!settings->vsync)
