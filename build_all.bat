@@ -8,6 +8,62 @@ REM Get the directory where this script is located
 set SCRIPT_DIR=%~dp0
 cd /d "%SCRIPT_DIR%"
 
+REM --- Command-line argument parsing ---
+set "ONLY_CONFIG="
+set "INCLUDE_DEBUG=0"
+set "VERBOSE=0"
+
+:parse_args
+if "%~1"=="" goto args_done
+set "arg=%~1"
+if /i "%arg:~0,3%"=="-O=" (
+    set "ONLY_CONFIG=%arg:~3%"
+    shift
+    goto parse_args
+)
+if /i "%arg:~0,7%"=="--only=" (
+    set "ONLY_CONFIG=%arg:~7%"
+    shift
+    goto parse_args
+)
+if /i "%arg%"=="-O" (
+    shift
+    if "%~1"=="" (
+        echo ERROR: Missing value for -O/--only
+        exit /b 1
+    )
+    set "ONLY_CONFIG=%~1"
+    shift
+    goto parse_args
+)
+if /i "%arg%"=="--only" (
+    shift
+    if "%~1"=="" (
+        echo ERROR: Missing value for -O/--only
+        exit /b 1
+    )
+    set "ONLY_CONFIG=%~1"
+    shift
+    goto parse_args
+)
+if /i "%arg%"=="-D" set "INCLUDE_DEBUG=1" & shift & goto parse_args
+if /i "%arg%"=="--debug" set "INCLUDE_DEBUG=1" & shift & goto parse_args
+if /i "%arg%"=="-V" set "VERBOSE=1" & shift & goto parse_args
+if /i "%arg%"=="--verbose" set "VERBOSE=1" & shift & goto parse_args
+
+REM Unknown arg: ignore and continue
+shift
+goto parse_args
+
+:args_done
+
+if "%VERBOSE%"=="1" (
+    set "MSBUILD_VERBOSITY=/verbosity:detailed"
+) else (
+    set "MSBUILD_VERBOSITY="
+)
+
+
 REM Find MSBuild.exe (check Visual Studio 2026 Insiders first)
 set MSBUILD_PATH=
 
@@ -106,64 +162,77 @@ if %VCPKG_FOUND%==1 (
 )
 echo.
 
-REM Build Dev x64 Configuration
+REM Build logic: respect --only/-O and --debug/-D flags
+
+if defined ONLY_CONFIG (
+    set "cfg=%ONLY_CONFIG%"
+    if /i "%cfg%"=="dev" (
+        call :build_and_copy Dev
+        if errorlevel 1 ( echo. & echo ERROR: Dev x64 build failed! & pause & exit /b 1 )
+        goto all_done
+    )
+    if /i "%cfg%"=="release" (
+        call :build_and_copy Release
+        if errorlevel 1 ( echo. & echo ERROR: Release x64 build failed! & pause & exit /b 1 )
+        goto all_done
+    )
+    if /i "%cfg%"=="debug" (
+        call :build_and_copy Debug
+        if errorlevel 1 ( echo. & echo ERROR: Debug x64 build failed! & pause & exit /b 1 )
+        goto all_done
+    )
+    echo ERROR: Unknown configuration '%cfg%' for --only
+    exit /b 1
+)
+
+REM Default sequence: Dev, optionally Debug, Release
+call :build_and_copy Dev
+if errorlevel 1 ( echo. & echo ERROR: Dev x64 build failed! & pause & exit /b 1 )
+if "%INCLUDE_DEBUG%"=="1" (
+    call :build_and_copy Debug
+    if errorlevel 1 ( echo. & echo ERROR: Debug x64 build failed! & pause & exit /b 1 )
+)
+call :build_and_copy Release
+if errorlevel 1 ( echo. & echo ERROR: Release x64 build failed! & pause & exit /b 1 )
+
+goto all_done
+
+:: Subroutine to build and copy vcpkg dlls for a configuration
+:build_and_copy
+set "CONFIG_NAME=%~1"
 echo ========================================
-echo Building: Dev x64
+echo Building: %CONFIG_NAME% x64
 echo ========================================
-"%MSBUILD_PATH%" "Menu Base.vcxproj" /t:Build /p:Configuration=Dev /p:Platform=x64 /p:VcpkgEnabled=true /p:CL=/FS /m
+set "EXTRA_MSBUILD_PROPS="
+if /i "%CONFIG_NAME%"=="Debug" set "EXTRA_MSBUILD_PROPS=/p:RuntimeLibrary=MultiThreadedDebugDLL"
+"%MSBUILD_PATH%" "Menu Base.vcxproj" /t:Build %MSBUILD_VERBOSITY% /p:Configuration=%CONFIG_NAME% /p:Platform=x64 /p:VcpkgEnabled=true /p:CL=/FS %EXTRA_MSBUILD_PROPS% /m
 if errorlevel 1 (
-    echo.
-    echo ERROR: Dev x64 build failed!
-    pause
     exit /b 1
 )
 echo.
-echo Dev x64 build completed successfully!
+echo %CONFIG_NAME% x64 build completed successfully!
 echo.
 
-REM Copy vcpkg DLLs for Dev configuration if vcpkg is found
 if %VCPKG_FOUND%==1 (
-    echo Copying vcpkg DLLs for Dev configuration...
+    echo Copying vcpkg DLLs for %CONFIG_NAME% configuration...
     if exist "%VCPKG_ROOT%\installed\x64-windows\bin\*.dll" (
-        xcopy /Y /I "%VCPKG_ROOT%\installed\x64-windows\bin\*.dll" "bin\Dev\x64\" >nul 2>&1
+        xcopy /Y /I "%VCPKG_ROOT%\installed\x64-windows\bin\*.dll" "bin\%CONFIG_NAME%\x64\" >nul 2>&1
         echo   Copied DLLs from vcpkg installed directory
     )
 )
 
-echo.
-
-REM Build Release x64 Configuration
-echo ========================================
-echo Building: Release x64
-echo ========================================
-"%MSBUILD_PATH%" "Menu Base.vcxproj" /t:Build /p:Configuration=Release /p:Platform=x64 /p:VcpkgEnabled=true /p:CL=/FS /m
-if errorlevel 1 (
-    echo.
-    echo ERROR: Release x64 build failed!
-    pause
-    exit /b 1
-)
-echo.
-echo Release x64 build completed successfully!
-echo.
-
-REM Copy vcpkg DLLs for Release configuration if vcpkg is found
-if %VCPKG_FOUND%==1 (
-    echo Copying vcpkg DLLs for Release configuration...
-    if exist "%VCPKG_ROOT%\installed\x64-windows\bin\*.dll" (
-        xcopy /Y /I "%VCPKG_ROOT%\installed\x64-windows\bin\*.dll" "bin\Release\x64\" >nul 2>&1
-        echo   Copied DLLs from vcpkg installed directory
-    )
-)
+goto :eof
 
 echo.
 
+:all_done
 echo ========================================
 echo All builds completed successfully!
 echo ========================================
 echo.
 echo Output locations:
 echo   Dev x64:    bin\Dev\x64\Menu Base.exe
+echo   Debug x64:  bin\Debug\x64\Menu Base.exe
 echo   Release x64: bin\Release\x64\Menu Base.exe
 echo.
 echo Note: If DLLs are missing, ensure:
