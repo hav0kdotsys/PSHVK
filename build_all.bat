@@ -1,4 +1,5 @@
 @echo off
+setlocal enabledelayedexpansion
 echo ========================================
 echo Building Menu Base - All Configurations
 echo ========================================
@@ -16,44 +17,79 @@ set "VERBOSE=0"
 :parse_args
 if "%~1"=="" goto args_done
 set "arg=%~1"
-if /i "%arg:~0,3%"=="-O=" (
-    set "ONLY_CONFIG=%arg:~3%"
+
+REM Handle --only=value and -O=value
+if "!arg:~0,3!"=="-O=" (
+    set "ONLY_CONFIG=!arg:~3!"
     shift
     goto parse_args
 )
-if /i "%arg:~0,7%"=="--only=" (
-    set "ONLY_CONFIG=%arg:~7%"
+if "!arg:~0,7!"=="--only=" (
+    set "ONLY_CONFIG=!arg:~7!"
     shift
     goto parse_args
 )
-if /i "%arg%"=="-O" (
+
+REM Handle --only value and -O value
+if /i "!arg!"=="-O" (
     shift
-    if "%~1"=="" (
+    if "!~1!"=="" (
         echo ERROR: Missing value for -O/--only
+        echo Usage: build_all.bat -O dev    ^| -O release   ^| -O debug
         exit /b 1
     )
-    set "ONLY_CONFIG=%~1"
+    set "ONLY_CONFIG=!~1!"
     shift
     goto parse_args
 )
-if /i "%arg%"=="--only" (
+if /i "!arg!"=="--only" (
     shift
-    if "%~1"=="" (
-        echo ERROR: Missing value for -O/--only
+    if "!~1!"=="" (
+        echo ERROR: Missing value for --only
+        echo Usage: build_all.bat --only dev ^| --only release ^| --only debug
         exit /b 1
     )
-    set "ONLY_CONFIG=%~1"
+    set "ONLY_CONFIG=!~1!"
     shift
     goto parse_args
 )
-if /i "%arg%"=="-D" set "INCLUDE_DEBUG=1" & shift & goto parse_args
-if /i "%arg%"=="--debug" set "INCLUDE_DEBUG=1" & shift & goto parse_args
-if /i "%arg%"=="-V" set "VERBOSE=1" & shift & goto parse_args
-if /i "%arg%"=="--verbose" set "VERBOSE=1" & shift & goto parse_args
+
+REM Handle boolean flags
+if /i "!arg!"=="-D" set "INCLUDE_DEBUG=1" & shift & goto parse_args
+if /i "!arg!"=="--debug" set "INCLUDE_DEBUG=1" & shift & goto parse_args
+if /i "!arg!"=="-V" set "VERBOSE=1" & shift & goto parse_args
+if /i "!arg!"=="--verbose" set "VERBOSE=1" & shift & goto parse_args
+if /i "!arg!"=="-h" goto show_help
+if /i "!arg!"=="--help" goto show_help
 
 REM Unknown arg: ignore and continue
 shift
 goto parse_args
+
+:show_help
+echo.
+echo USAGE: build_all.bat [OPTIONS]
+echo.
+echo OPTIONS:
+echo   -O [dev^|release^|debug]         Build only specified config  (short form with space)
+echo   --only [dev^|release^|debug]     Build only specified config  (long form with space)
+echo   -O=dev, -O=release, -O=debug    Build only specified config  (short form with equals)
+echo   --only=dev, etc.                Build only specified config  (long form with equals)
+echo.
+echo   -D, --debug                      Include Debug build in sequence (default: Dev + Release)
+echo   -V, --verbose                    Enable detailed MSBuild output
+echo   -h, --help                       Show this help message
+echo.
+echo EXAMPLES:
+echo   build_all.bat                   Builds Dev and Release configurations
+echo   build_all.bat -D                Builds Dev, Debug, and Release
+echo   build_all.bat -O dev            Builds ONLY Dev configuration
+echo   build_all.bat --only=release    Builds ONLY Release configuration
+echo   build_all.bat -O debug -V       Builds ONLY Debug with verbose output
+echo   build_all.bat -D -V             Builds all three with verbose output
+echo.
+pause
+exit /b 0
 
 :args_done
 
